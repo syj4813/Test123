@@ -38,6 +38,15 @@ def _render_leg_detail(legs):
         label = LEG_LABEL.get(leg.mode, leg.mode)
         time_str = f" · {format_time(leg.duration_seconds)}" if leg.duration_seconds > 0 else ""
         st.markdown(f"**{label}** · {leg.km:.1f} km · {leg.co2_kg:.3f} kg CO2eq{time_str}")
+        
+        # 열차 정보 표시
+        if leg.train_info and leg.train_info.get("trainno"):
+            train_no = leg.train_info.get("trainno", "")
+            dep_time = leg.train_info.get("deptime", "")
+            arr_time = leg.train_info.get("arrtime", "")
+            fare = leg.train_info.get("fare", 0)
+            st.caption(f"🚆 {train_no} · {dep_time}→{arr_time} · 요금: {fare:,}원")
+        
         if leg.route:
             st.markdown(
                 f'<div class="route-line">{" → ".join(leg.route)}</div>',
@@ -236,12 +245,22 @@ if submitted:
         with col:
             rail_leg = next(l for l in r.legs if l.mode == mode)
             time_str = f" · {format_time(r.total_duration_seconds)}" if r.total_duration_seconds > 0 else ""
+            
+            # 열차 정보 (편명, 출발/도착 시간)
+            train_info_str = ""
+            if rail_leg.train_info and rail_leg.train_info.get("trainno"):
+                train_no = rail_leg.train_info.get("trainno", "")
+                dep_time = rail_leg.train_info.get("deptime", "")
+                arr_time = rail_leg.train_info.get("arrtime", "")
+                train_info_str = f'<div class="result-sub" style="color:#FF6B6B; font-weight: bold;">🚆 편명: {train_no} · {dep_time} → {arr_time}</div>'
+            
             st.markdown(
                 f"""
                 <div class="result-card" style="border-top:4px solid {MODE_COLOR[mode]};">
                   <h4>{MODE_LABEL[mode]}</h4>
                   <div class="result-metric" style="color:{MODE_COLOR[mode]};">{r.total_co2_kg:.2f} kg CO2eq</div>
                   <div class="result-sub">미세먼지 {r.total_pm25_kg*1000:.2f} g · {r.total_km:.1f} km{time_str}</div>
+                  {train_info_str}
                   <div class="route-line">{route_str}</div>
                   {warn}
                 </div>

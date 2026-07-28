@@ -22,6 +22,7 @@ from geocode import geocode
 from road_distance import driving_distance_km, driving_route
 from transit_distance import transit_route, TransitError, format_time
 import train_api
+import train_api_async
 from stations import nearest_stations
 from terminals import nearest_terminals
 from rail_distance import station_to_station_km
@@ -36,6 +37,7 @@ class LegResult:
     pm25_kg: float
     route: List[str] = field(default_factory=list)   # 주요 도로명 또는 경유역 목록
     duration_seconds: int = 0       # 소요시간(초), 0이면 미제공
+    train_info: dict = field(default_factory=dict)   # 열차 정보 (편명, 출발시간, 도착시간 등)
 
 
 @dataclass
@@ -175,18 +177,34 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
     else:
         base_notes.append(f"경유 경로(선로 기준, 정차역 아님): {' - '.join(via_stations)}")
 
+    # 비동기로 3개 등급 동시 조회 (훨씬 빠름!)
+    train_info_all = train_api_async.get_all_train_info_sync(o_st[0], d_st[0])
+    
     results = {}
     for mode in RAIL_GRADES:
-        # TAGO API로 실제 열차 소요시간 조회
-        train_duration_seconds = train_api.get_train_duration(o_st[0], d_st[0], mode)
+        # 비동기 API 결과에서 소요시간 추출
+        train_data = train_info_all.get(mode, {})
+        train_duration_seconds = train_data.get("duration", 0)
+        trains = train_data.get("trains", [])
         
         # API 실패 시 거리 기반 추정
         if train_duration_seconds == 0:
             speeds = {"ktx": 200, "saemaul": 80, "mugunghwa": 70}  # km/h
             train_duration_seconds = int(rail_km / speeds[mode] * 3600)
         
+        # 가장 빠른 열차 정보 (첫 번째)
+        best_train = trains[0] if trains else {}
+        
         e3 = compute_emission(mode, rail_km, passengers=passengers)
-        rail_leg = LegResult(mode, rail_km, e3["co2_kg"], e3["pm25_kg"], list(via_stations), train_duration_seconds)
+        rail_leg = LegResult(
+            mode, 
+            rail_km, 
+            e3["co2_kg"], 
+            e3["pm25_kg"], 
+            list(via_stations), 
+            train_duration_seconds,
+            best_train  # 열차 정보 포함
+        )
         legs = [leg_access1, rail_leg, leg_access2]
         total_km = leg_access1.km + rail_km + leg_access2.km
         total_co2 = leg_access1.co2_kg + e3["co2_kg"] + leg_access2.co2_kg

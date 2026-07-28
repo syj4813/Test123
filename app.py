@@ -16,6 +16,12 @@ from datetime import datetime, date
 from calculator import run, RAIL_GRADES
 from transit_distance import format_time
 
+# CPU 사용량 최소화: 계산 결과 1시간 캐싱
+@st.cache_data(ttl=3600)
+def cached_run(origin, dest, passengers):
+    """API 호출 결과를 1시간 동안 캐싱하여 CPU 절감"""
+    return run(origin, dest, passengers=passengers)
+
 MODE_LABEL = {"ktx": "KTX", "mugunghwa": "무궁화호", "saemaul": "새마을호"}
 MODE_COLOR = {"ktx": "#0B6E4F", "mugunghwa": "#3A8DFF", "saemaul": "#2FB380"}
 
@@ -174,7 +180,8 @@ if submitted:
         for i, step in enumerate(steps):
             status_placeholder.info(step)
         
-        result = run(origin, dest, passengers=int(passengers))
+        # 캐싱된 계산 호출 (CPU 절감)
+        result = cached_run(origin, dest, int(passengers))
         
         progress_placeholder.success("✅ 계산 완료!")
         status_placeholder.empty()

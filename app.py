@@ -160,7 +160,7 @@ if submitted:
     col_car, col_bus = st.columns(2)
 
     with col_car:
-        time_str = f" · {format_time(result.car.legs[0].duration_seconds)}" if result.car.legs[0].duration_seconds > 0 else ""
+        time_str = f" · {format_time(result.car.total_duration_seconds)}" if result.car.total_duration_seconds > 0 else ""
         st.markdown(
             f"""
             <div class="result-card">
@@ -175,7 +175,7 @@ if submitted:
 
     with col_bus:
         bus_leg = next(l for l in result.bus.legs if l.mode == "express_bus")
-        time_str = f" · {format_time(bus_leg.duration_seconds)}" if bus_leg.duration_seconds > 0 else ""
+        time_str = f" · {format_time(result.bus.total_duration_seconds)}" if result.bus.total_duration_seconds > 0 else ""
         st.markdown(
             f"""
             <div class="result-card">
@@ -208,7 +208,7 @@ if submitted:
         warn = "".join(f'<div class="warn-note">{n}</div>' for n in r.notes if n.startswith("⚠"))
         with col:
             rail_leg = next(l for l in r.legs if l.mode == mode)
-            time_str = f" · {format_time(rail_leg.duration_seconds)}" if rail_leg.duration_seconds > 0 else ""
+            time_str = f" · {format_time(r.total_duration_seconds)}" if r.total_duration_seconds > 0 else ""
             st.markdown(
                 f"""
                 <div class="result-card" style="border-top:4px solid {MODE_COLOR[mode]};">

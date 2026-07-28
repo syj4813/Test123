@@ -44,6 +44,7 @@ class ModeResult:
     total_pm25_kg: float
     legs: list = field(default_factory=list)
     notes: list = field(default_factory=list)   # 근사치 사용 등 경고 메모
+    total_duration_seconds: int = 0  # 전체 소요시간(초)
 
 
 def _pick_best_station(candidates, origin_point):
@@ -97,7 +98,7 @@ def _car_leg(mode_label, origin_pt, dest_pt, passengers):
 
 def compute_car(origin_pt, dest_pt, passengers: int = 1) -> ModeResult:
     leg = _car_leg("car", origin_pt, dest_pt, passengers)
-    return ModeResult(leg.km, leg.co2_kg, leg.pm25_kg, [leg])
+    return ModeResult(leg.km, leg.co2_kg, leg.pm25_kg, [leg], [], leg.duration_seconds)
 
 
 def compute_bus(origin_pt, dest_pt, passengers: int = 1) -> ModeResult:
@@ -136,8 +137,9 @@ def compute_bus(origin_pt, dest_pt, passengers: int = 1) -> ModeResult:
     total_km = leg1.km + leg_bus.km + leg2.km
     total_co2 = leg1.co2_kg + leg_bus.co2_kg + leg2.co2_kg
     total_pm25 = leg1.pm25_kg + leg_bus.pm25_kg + leg2.pm25_kg
+    total_duration = leg1.duration_seconds + leg_bus.duration_seconds + leg2.duration_seconds
     notes = [f"출발터미널: {o_term[0]}", f"도착터미널: {d_term[0]}"]
-    return ModeResult(total_km, total_co2, total_pm25, legs, notes)
+    return ModeResult(total_km, total_co2, total_pm25, legs, notes, total_duration)
 
 
 RAIL_GRADES = ["ktx", "mugunghwa", "saemaul"]
@@ -190,7 +192,8 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
         total_km = leg_access1.km + rail_km + leg_access2.km
         total_co2 = leg_access1.co2_kg + e3["co2_kg"] + leg_access2.co2_kg
         total_pm25 = leg_access1.pm25_kg + e3["pm25_kg"] + leg_access2.pm25_kg
-        results[mode] = ModeResult(total_km, total_co2, total_pm25, legs, list(base_notes))
+        total_duration = leg_access1.duration_seconds + rail_duration_seconds + leg_access2.duration_seconds
+        results[mode] = ModeResult(total_km, total_co2, total_pm25, legs, list(base_notes), total_duration)
 
     return results
 

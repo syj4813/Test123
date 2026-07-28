@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-TAGO_BASE_URL = "https://apis.data.go.kr/1613000/TrainInfoService"
+TAGO_BASE_URL = "https://apis.data.go.kr/1613000/TrainInfo"
 TRAIN_GRADE_MAP = {
     "ktx": "00",
     "saemaul": "01",
@@ -67,20 +67,27 @@ def _parse_time(time_str: str) -> int:
 
 @functools.lru_cache(maxsize=500)
 def _get_station_id(station_name: str, api_key: str = None) -> str:
-    """역명으로 역ID 조회. 주요 역은 즉시 반환, 나머지는 API 조회."""
+    """역명으로 역ID 조회. 주요 역은 즉시 반환, 나머지는 API 조회.
+
+    🔧 FIX: 이전에는 도시코드 10개를 순차(sequential)로 하나씩 조회했다.
+    엔드포인트가 틀렸을 때는 매번 빠르게 404가 나서 체감상 안 느렸지만,
+    엔드포인트를 고쳐 실제 TAGO 서버까지 도달하게 되자 10번 x 응답시간이
+    그대로 쌓여 크게 느려졌다. 10개를 병렬로 동시 호출해 가장 늦게
+    끝나는 1건 수준의 시간만 걸리도록 수정.
+    """
     # 1. 주요 역 먼저 확인 (API 호출 안 함)
     for major_name, station_id in MAJOR_STATIONS.items():
         if major_name.lower() in station_name.lower() or station_name.lower() in major_name.lower():
             return station_id
     
-    # 2. 주요 역에 없으면 API로 조회
+    # 2. 주요 역에 없으면 API로 조회 (🔧 병렬)
     key = _get_key(api_key)
     if not key:
         return ""
 
     city_codes = ["11", "26", "27", "28", "29", "30", "31", "36", "37", "39"]
-    
-    for city_code in city_codes:
+
+    def _fetch_city(city_code):
         url = f"{TAGO_BASE_URL}/GetCtyAcctoTrainSttnList"
         params = {
             "serviceKey": key,
@@ -89,22 +96,30 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
             "_type": "json",
             "cityCode": city_code,
         }
-        
         try:
-            resp = requests.get(url, params=params, timeout=10)
+            resp = requests.get(url, params=params, timeout=4)
             if resp.status_code != 200:
-                continue
-            
+                return None
             data = resp.json()
             stations = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
-            
             for station in stations:
                 stn_name = station.get("stationname", "").strip()
                 if stn_name.lower() == station_name.lower() or station_name in stn_name:
                     return station.get("stationid", "")
+            return None
         except:
-            continue
-    
+            return None
+
+    with ThreadPoolExecutor(max_workers=len(city_codes)) as executor:
+        futures = [executor.submit(_fetch_city, cc) for cc in city_codes]
+        for future in as_completed(futures, timeout=6):
+            try:
+                result = future.result()
+            except Exception:
+                continue
+            if result:
+                return result
+
     return ""
 
 

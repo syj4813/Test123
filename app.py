@@ -467,7 +467,7 @@ if st.session_state.get("last_result") is not None:
                 st.code(_resp.text[:3000], language="json")
 
         st.markdown("---")
-        if st.button("④ 최종 확인: GetCtyAcctoTrainSttnList (대문자 Get, 확정된 정답)"):
+        if st.button("④ 최종 확인: GetCtyAcctoTrainSttnList (확정된 정답 주소)"):
             import requests as _requests
             try:
                 _key = st.secrets.get("TAGO_API_KEY")
@@ -476,7 +476,7 @@ if st.session_state.get("last_result") is not None:
             if not _key:
                 st.error("TAGO_API_KEY가 Secrets에 없습니다.")
             else:
-                _url = "https://apis.data.go.kr/1613000/TrainInfoService/GetCtyAcctoTrainSttnList"
+                _url = "https://apis.data.go.kr/1613000/TrainInfo/GetCtyAcctoTrainSttnList"
                 _r = _requests.get(
                     _url,
                     params={

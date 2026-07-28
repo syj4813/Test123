@@ -13,7 +13,7 @@ import functools
 from datetime import datetime, timedelta
 
 
-TAGO_BASE_URL = "https://apis.data.go.kr/1613000/TrainInfoService"
+TAGO_BASE_URL = "https://apis.data.go.kr/1613000/TrainInfo"
 TRAIN_GRADE_MAP = {
     "ktx": "00",
     "saemaul": "01",

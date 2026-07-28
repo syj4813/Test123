@@ -21,6 +21,7 @@ from typing import Dict, List
 from geocode import geocode
 from road_distance import driving_distance_km, driving_route
 from transit_distance import transit_route, TransitError, format_time
+import train_api
 from stations import nearest_stations
 from terminals import nearest_terminals
 from rail_distance import station_to_station_km
@@ -166,16 +167,6 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
         o_st[0], o_st[1], o_st[2], d_st[0], d_st[1], d_st[2]
     )
 
-    # 역 간 대중교통 실제 소요시간
-    rail_duration_seconds = 0
-    try:
-        transit_info = transit_route((o_st[1], o_st[2]), (d_st[1], d_st[2]))
-        rail_duration_seconds = transit_info.get("duration_seconds", 0)
-    except TransitError:
-        # 대중교통 API 실패 시 거리 기반 추정
-        # KTX 평균 200km/h, 무궁화 70km/h, 새마을 80km/h
-        rail_duration_seconds = int(rail_km / 200 * 3600)  # KTX 기준 추정
-
     base_notes = [f"출발역: {o_st[0]}", f"도착역: {d_st[0]}"]
     if is_approx:
         base_notes.append(
@@ -186,13 +177,21 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
 
     results = {}
     for mode in RAIL_GRADES:
+        # TAGO API로 실제 열차 소요시간 조회
+        train_duration_seconds = train_api.get_train_duration(o_st[0], d_st[0], mode)
+        
+        # API 실패 시 거리 기반 추정
+        if train_duration_seconds == 0:
+            speeds = {"ktx": 200, "saemaul": 80, "mugunghwa": 70}  # km/h
+            train_duration_seconds = int(rail_km / speeds[mode] * 3600)
+        
         e3 = compute_emission(mode, rail_km, passengers=passengers)
-        rail_leg = LegResult(mode, rail_km, e3["co2_kg"], e3["pm25_kg"], list(via_stations), rail_duration_seconds)
+        rail_leg = LegResult(mode, rail_km, e3["co2_kg"], e3["pm25_kg"], list(via_stations), train_duration_seconds)
         legs = [leg_access1, rail_leg, leg_access2]
         total_km = leg_access1.km + rail_km + leg_access2.km
         total_co2 = leg_access1.co2_kg + e3["co2_kg"] + leg_access2.co2_kg
         total_pm25 = leg_access1.pm25_kg + e3["pm25_kg"] + leg_access2.pm25_kg
-        total_duration = leg_access1.duration_seconds + rail_duration_seconds + leg_access2.duration_seconds
+        total_duration = leg_access1.duration_seconds + train_duration_seconds + leg_access2.duration_seconds
         results[mode] = ModeResult(total_km, total_co2, total_pm25, legs, list(base_notes), total_duration)
 
     return results

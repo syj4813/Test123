@@ -33,13 +33,38 @@ def fake_driving_distance_km(origin, destination, api_key=None):
 
 def fake_driving_route(origin, destination, api_key=None):
     km = _straight_km(origin, destination) * 1.2
-    return {"km": km, "roads": ["OO대로(mock)", "OO고속도로(mock)"]}
+    duration_seconds = int(km / 100 * 3600)  # 평균 100km/h 가정
+    return {"km": km, "roads": ["OO대로(mock)", "OO고속도로(mock)"], "duration_seconds": duration_seconds}
+
+
+def fake_transit_route(origin, destination, api_key=None):
+    km = _straight_km(origin, destination) * 1.2
+    return {
+        "duration_seconds": int(km / 80 * 3600),  # 버스 평균 80km/h
+        "distance_m": km * 1000,
+        "duration_minutes": int(km / 80 * 60),
+        "fare": 2500,
+        "transfers": 0,
+        "summary": "버스(mock)",
+        "legs": []
+    }
 
 
 def test_run():
     calculator.geocode = fake_geocode
     calculator.driving_distance_km = fake_driving_distance_km
     calculator.driving_route = fake_driving_route
+    calculator.transit_route = fake_transit_route
+    
+    # TAGO API 모킹 (train_api 모듈 전체를 모킹)
+    import train_api
+    def fake_get_train_duration(station_dep, station_arr, train_grade):
+        km = _straight_km((37.5546,126.9707), (35.1587,129.1604)) * 1.2
+        speeds = {"ktx": 200, "saemaul": 80, "mugunghwa": 70}
+        return int(km / speeds.get(train_grade, 100) * 3600)
+    
+    train_api.get_train_duration = fake_get_train_duration
+    calculator.train_api.get_train_duration = fake_get_train_duration
 
     o_lat, o_lng, _ = fake_geocode("서울역 근처")
     d_lat, d_lng, _ = fake_geocode("부산 해운대")
@@ -86,6 +111,17 @@ def test_passenger_scaling():
     calculator.geocode = fake_geocode
     calculator.driving_distance_km = fake_driving_distance_km
     calculator.driving_route = fake_driving_route
+    calculator.transit_route = fake_transit_route
+    
+    # TAGO API 모킹
+    import train_api
+    def fake_get_train_duration(station_dep, station_arr, train_grade):
+        km = _straight_km((37.5546,126.9707), (35.1587,129.1604)) * 1.2
+        speeds = {"ktx": 200, "saemaul": 80, "mugunghwa": 70}
+        return int(km / speeds.get(train_grade, 100) * 3600)
+    
+    train_api.get_train_duration = fake_get_train_duration
+    calculator.train_api.get_train_duration = fake_get_train_duration
 
     o_lat, o_lng, _ = fake_geocode("서울역 근처")
     d_lat, d_lng, _ = fake_geocode("부산 해운대")

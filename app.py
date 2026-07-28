@@ -376,3 +376,65 @@ if submitted:
                 f"※ {MODE_LABEL[mode]}는 배출계수 자체가 고속버스보다 높아 "
                 "버스 대비 편익이 음수(더 많이 배출)로 나올 수 있습니다."
             )
+
+    # ------------------------------------------------------------------
+    # 🔧 임시 디버그: TAGO API 원본 응답 확인용 (문제 해결되면 삭제할 것)
+    # ------------------------------------------------------------------
+    with st.expander("🔧 [디버그] TAGO API 원본 응답 확인"):
+        st.caption("편명/정차역이 안 보일 때, 이 버튼으로 실제 API가 뭘 돌려주는지 확인합니다.")
+        if st.button("KTX 원본 응답 조회"):
+            import requests as _requests
+            try:
+                _key = st.secrets.get("TAGO_API_KEY")
+            except Exception:
+                _key = None
+            if not _key:
+                st.error("TAGO_API_KEY가 Secrets에 없습니다.")
+            else:
+                import train_api_threading as _tat
+                _dep_id = _tat._get_station_id(origin.split()[0] if origin else "서울", _key)
+                _arr_id = _tat._get_station_id(dest.split()[0] if dest else "부산", _key)
+                st.write(f"조회한 출발역ID: `{_dep_id}` / 도착역ID: `{_arr_id}`")
+
+                _url = f"{_tat.TAGO_BASE_URL}/getStrtpntAlocFndTrainInfo"
+                _params = {
+                    "serviceKey": _key,
+                    "pageNo": 1,
+                    "numOfRows": 20,
+                    "_type": "json",
+                    "depPlaceId": _dep_id,
+                    "arrPlaceId": _arr_id,
+                    "depPlandTime": "null",
+                    "trainGradeCode": "00",
+                }
+                _resp = _requests.get(_url, params=_params, timeout=10)
+                st.write(f"HTTP 상태코드: `{_resp.status_code}`")
+                st.write(f"실제 요청 URL: `{_resp.url}`")
+                st.code(_resp.text[:3000], language="json")
+
+        if st.button("정차역(GetTrainStopList) 원본 응답 조회 - 편명 필요"):
+            st.info("먼저 위에서 KTX 원본 응답을 조회해서 실제 편명(trainno)을 확인한 뒤, "
+                    "아래 입력창에 그 편명을 넣고 다시 눌러주세요.")
+        train_no_debug = st.text_input("편명 직접 입력 (예: 05201)", key="debug_trainno")
+        if st.button("정차역 원본 응답 조회") and train_no_debug:
+            import requests as _requests
+            try:
+                _key = st.secrets.get("TAGO_API_KEY")
+            except Exception:
+                _key = None
+            if not _key:
+                st.error("TAGO_API_KEY가 Secrets에 없습니다.")
+            else:
+                import train_api_threading as _tat
+                _url = f"{_tat.TAGO_BASE_URL}/getTrainStopList"
+                _params = {
+                    "serviceKey": _key,
+                    "pageNo": 1,
+                    "numOfRows": 100,
+                    "_type": "json",
+                    "trainNo": train_no_debug,
+                }
+                _resp = _requests.get(_url, params=_params, timeout=10)
+                st.write(f"HTTP 상태코드: `{_resp.status_code}`")
+                st.write(f"실제 요청 URL: `{_resp.url}`")
+                st.code(_resp.text[:3000], language="json")

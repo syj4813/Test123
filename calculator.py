@@ -177,6 +177,9 @@ def _calculate_train_wait_time(travel_time_str: str, access_duration_seconds: in
         return wait_minutes * 60  # 초 단위로 반환
     except:
         return 0  # 파싱 실패 시 대기시간 없음
+
+
+def compute_rail(origin_pt, dest_pt, passengers: int = 1, travel_time_str: str = "00:00") -> Dict[str, ModeResult]:
     """세 등급(KTX/무궁화/새마을)을 모두 계산해서 {등급: ModeResult} 딕셔너리로 반환.
 
     출발/도착역 선정과 역간 실제거리는 등급과 무관하게 동일한 물리적 경로를

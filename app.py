@@ -31,6 +31,8 @@ if 'dest' not in st.session_state:
     st.session_state.dest = ""
 if 'passengers' not in st.session_state:
     st.session_state.passengers = 1
+if 'last_result' not in st.session_state:
+    st.session_state.last_result = None
 
 # CPU 사용량 최소화: 계산 결과 캐싱 (TTL: 30분, 변경감지: origin+dest+passengers)
 @st.cache_data(ttl=1800, show_spinner=False)  
@@ -246,6 +248,9 @@ if submitted:
         
         progress_placeholder.success("✅ 계산 완료!")
         status_placeholder.empty()
+
+        # 🔧 FIX: 결과를 session_state에 저장 (버튼 클릭 등으로 재실행되어도 유지)
+        st.session_state.last_result = result
         
     except Exception as e:
         st.error(f"계산 중 문제가 발생했습니다: {e}")
@@ -253,7 +258,18 @@ if submitted:
             "흔한 원인: 주소가 너무 모호함 / API 키 미설정·오류 / "
             "카카오·구글 API 활성화 상태 확인 필요"
         )
+        st.session_state.last_result = None
         st.stop()
+
+# 🔧 FIX: 렌더링을 submitted가 아니라 "저장된 결과가 있는지"로 분기
+# → 디버그 버튼처럼 폼 밖의 위젯을 눌러 재실행되어도 결과 화면이 유지됨
+if st.session_state.get("last_result") is not None:
+    result = st.session_state.last_result
+    origin = st.session_state.origin
+    dest = st.session_state.dest
+    passengers = st.session_state.passengers
+    travel_date = st.session_state.travel_date
+    travel_time = st.session_state.travel_time
 
     st.success(f"탑승 인원 {passengers}명 기준으로 계산했습니다.")
     st.info(f"📅 {travel_date.strftime('%Y년 %m월 %d일')} 🕐 {travel_time.strftime('%H:%M')} 출발 기준")

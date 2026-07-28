@@ -9,7 +9,7 @@ Geocoding API를 Google Cloud Console에서 활성화해야 함.
 import os
 import requests
 
-import config
+# import config
 
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 

@@ -11,6 +11,7 @@
 """
 
 import streamlit as st
+from datetime import datetime, date
 
 from calculator import run, RAIL_GRADES
 from transit_distance import format_time
@@ -134,6 +135,14 @@ with st.form("input_form"):
         origin = st.text_input("출발지", placeholder="예: 서울시 강남구 테헤란로 152")
     with c3:
         dest = st.text_input("도착지", placeholder="예: 부산 해운대구 달맞이길 30")
+    
+    # 날짜/시간 선택
+    col_date, col_time = st.columns(2)
+    with col_date:
+        travel_date = st.date_input("여행 날짜", value=date.today())
+    with col_time:
+        travel_time = st.time_input("출발시간 (참고용)", value=datetime.now().time())
+    
     submitted = st.form_submit_button("환경 편익 계산하기", use_container_width=True)
 
 if submitted:
@@ -153,6 +162,7 @@ if submitted:
             st.stop()
 
     st.success(f"탑승 인원 {passengers}명 기준으로 계산했습니다.")
+    st.info(f"📅 {travel_date.strftime('%Y년 %m월 %d일')} 🕐 {travel_time.strftime('%H:%M')} 출발 기준")
 
     # ------------------------------------------------------------------
     # 자차 / 고속버스

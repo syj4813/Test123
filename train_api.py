@@ -93,8 +93,12 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
 
 
 @functools.lru_cache(maxsize=500)
-def _fetch_train_info(dep_place_id: str, arr_place_id: str, grade_code: str, api_key: str) -> int:
-    """캐시된 열차 정보 조회."""
+def _fetch_train_info(dep_place_id: str, arr_place_id: str, grade_code: str, api_key: str, dep_date: str = "null") -> int:
+    """캐시된 열차 정보 조회.
+    
+    Args:
+        dep_date: 출발 날짜 (YYYYMMDD 형식, "null"이면 오늘)
+    """
     url = f"{TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
     params = {
         "serviceKey": api_key,
@@ -103,7 +107,7 @@ def _fetch_train_info(dep_place_id: str, arr_place_id: str, grade_code: str, api
         "_type": "json",
         "depPlaceId": dep_place_id,
         "arrPlaceId": arr_place_id,
-        "depPlandTime": "null",
+        "depPlandTime": dep_date,
         "trainGradeCode": grade_code,
     }
 
@@ -132,7 +136,7 @@ def _fetch_train_info(dep_place_id: str, arr_place_id: str, grade_code: str, api
     return int(min_duration) if min_duration != float('inf') else 0
 
 
-def get_train_duration(station_dep: str, station_arr: str, train_grade: str, api_key: str = None) -> int:
+def get_train_duration(station_dep: str, station_arr: str, train_grade: str, api_key: str = None, dep_date: str = "null") -> int:
     """실제 열차 소요시간(초) 조회.
     
     Args:
@@ -140,6 +144,7 @@ def get_train_duration(station_dep: str, station_arr: str, train_grade: str, api
         station_arr: 도착역 이름 (예: "부산")
         train_grade: 열차 등급 ("ktx", "saemaul", "mugunghwa")
         api_key: TAGO API 키
+        dep_date: 출발 날짜 (YYYYMMDD 형식, "null"이면 오늘)
     
     Returns:
         소요시간(초). 조회 실패 시 0 반환
@@ -160,4 +165,4 @@ def get_train_duration(station_dep: str, station_arr: str, train_grade: str, api
         return 0
 
     # 캐시된 함수로 조회
-    return _fetch_train_info(dep_place_id, arr_place_id, grade_code, key)
+    return _fetch_train_info(dep_place_id, arr_place_id, grade_code, key, dep_date)

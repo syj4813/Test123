@@ -151,15 +151,25 @@ if submitted:
         st.stop()
 
     try:
-        with st.status("📊 계산 중...", expanded=True) as status:
-            st.write("🗺️ 주소 확인 중...")
-            st.write("🚗 자차 경로 계산 중...")
-            st.write("🚌 버스 경로 및 소요시간 조회 중...")
-            st.write("🚆 철도 경로 및 소요시간 조회 중 (TAGO API - 시간 소요)...")
-            
-            result = run(origin, dest, passengers=int(passengers))
-            
-            status.update(label="✅ 계산 완료!", state="complete")
+        progress_placeholder = st.empty()
+        status_placeholder = st.empty()
+        
+        # 각 단계별 진행 상황 표시
+        steps = [
+            "🗺️ 주소 확인 중...",
+            "🚗 자차 경로 계산 중...",
+            "🚌 버스 경로 및 소요시간 조회 중...",
+            "🚆 철도 경로 및 소요시간 조회 중 (TAGO API - 시간 소요)...",
+        ]
+        
+        for i, step in enumerate(steps):
+            status_placeholder.info(step)
+        
+        result = run(origin, dest, passengers=int(passengers))
+        
+        progress_placeholder.success("✅ 계산 완료!")
+        status_placeholder.empty()
+        
     except Exception as e:
         st.error(f"계산 중 문제가 발생했습니다: {e}")
         st.info(

@@ -179,6 +179,55 @@ def _calculate_train_wait_time(travel_time_str: str, access_duration_seconds: in
         return 0  # 파싱 실패 시 대기시간 없음
 
 
+def _select_best_train(trains: list, travel_time_str: str, access_duration_seconds: int) -> dict:
+    """사용자가 입력한 출발시간 + 역까지 이동시간을 반영해서, 그 이후
+    가장 빨리 출발하는 열차를 고른다.
+
+    🔧 이전에는 그냥 '그날 소요시간이 가장 짧은 열차'(trains[0])를 무조건
+    골랐다. 이러면 사용자가 오후 출발을 입력해도 새벽 열차가 뽑히는 등
+    실제 이용 가능 여부와 무관한 열차가 선택되고, 대기시간도
+    max(0, ...)로 뭉개져서 의미가 없어진다.
+
+    이 함수는 '역 도착 예정 시각 이후 가장 이른 출발' 열차를 찾고,
+    그런 열차가 하루 안에 더 없으면(막차를 놓친 경우) 참고용으로
+    가장 늦게 출발하는 열차를 대신 반환한다.
+    """
+    if not trains:
+        return {}
+
+    def _to_minutes(t):
+        try:
+            h, m = map(int, t.get("deptime", "").split(':'))
+            return h * 60 + m
+        except Exception:
+            return None
+
+    try:
+        dep_h, dep_m = map(int, travel_time_str.split(':'))
+        arrival_minutes = dep_h * 60 + dep_m + (access_duration_seconds // 60)
+    except Exception:
+        arrival_minutes = None
+
+    trains_with_minutes = [(t, _to_minutes(t)) for t in trains]
+    trains_with_minutes = [(t, m) for t, m in trains_with_minutes if m is not None]
+    if not trains_with_minutes:
+        return trains[0]  # deptime 파싱이 아예 안 되면 첫 항목이라도 반환
+
+    trains_with_minutes.sort(key=lambda x: x[1])
+
+    if arrival_minutes is None:
+        # 사용자 출발시간을 알 수 없으면 그냥 그날 첫차
+        return trains_with_minutes[0][0]
+
+    # 역 도착 예정 시각 이후 출발하는 열차 중 가장 이른 것
+    for t, m in trains_with_minutes:
+        if m >= arrival_minutes:
+            return t
+
+    # 오늘 안에 탈 수 있는 열차가 더 없음(막차 놓침) -> 참고용으로 막차 반환
+    return trains_with_minutes[-1][0]
+
+
 def compute_rail(origin_pt, dest_pt, passengers: int = 1, travel_time_str: str = "00:00") -> Dict[str, ModeResult]:
     """세 등급(KTX/무궁화/새마을)을 모두 계산해서 {등급: ModeResult} 딕셔너리로 반환.
 
@@ -222,13 +271,18 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1, travel_time_str: str =
         
         # 🔧 열차 정보가 없으면 속도 근사값으로 대체 (해당 등급이 이 구간에
         # 운행하지 않는 경우 - 예: 서울-춘천에 KTX/무궁화/새마을 없음)
-        if train_duration_seconds == 0 or not trains:
+        if not trains:
             speeds = {"ktx": 200, "saemaul": 80, "mugunghwa": 70, "itx-saemaul": 80}  # km/h
             train_duration_seconds = int(rail_km / speeds[mode] * 3600)
             best_train = {}  # 편명 등은 표시 안 함
         else:
-            # 가장 빠른 열차 정보 (첫 번째)
-            best_train = trains[0]
+            # 🔧 그날 최단 소요시간 열차가 아니라, 사용자가 입력한
+            # 출발시간(+역까지 이동시간) 이후 가장 빨리 출발하는 열차를 선택
+            best_train = _select_best_train(
+                trains, travel_time_str, int(leg_access1.duration_seconds)
+            )
+            # 선택된 열차 자체의 실제 소요시간 사용 (그날 최단 소요시간이 아님)
+            train_duration_seconds = best_train.get("duration", train_duration_seconds) or train_duration_seconds
         
         # 정차역이 있으면 사용, 없으면 Dijkstra 경로 사용
         route_display = train_stops if train_stops else list(via_stations)

@@ -211,10 +211,11 @@ def _calculate_train_wait_time(travel_time_str: str, access_duration_seconds: in
     
     results = {}
     for mode in RAIL_GRADES:
-        # Threading 결과에서 소요시간 추출
+        # Threading 결과에서 소요시간 + 정차역 추출
         train_data = train_info_all.get(mode, {})
         train_duration_seconds = train_data.get("duration", 0)
         trains = train_data.get("trains", [])
+        train_stops = train_data.get("stops", [])  # 실제 정차역
         
         # 정차역 조회는 비활성화 (초기 로딩 속도 우선)
         # 필요시 나중에 enable_stops=True로 수정 가능
@@ -225,9 +226,8 @@ def _calculate_train_wait_time(travel_time_str: str, access_duration_seconds: in
         # 가장 빠른 열차 정보 (첫 번째)
         best_train = trains[0] if trains else {}
         
-        # 정차역은 조회하지 않음 (빠른 응답 우선)
-        # 필요시 app.py에서 별도로 조회 가능
-        route_display = list(via_stations)  # Dijkstra 경로만 사용
+        # 정차역이 있으면 사용, 없으면 Dijkstra 경로 사용
+        route_display = train_stops if train_stops else list(via_stations)
         
         e3 = compute_emission(mode, rail_km, passengers=passengers)
         rail_leg = LegResult(

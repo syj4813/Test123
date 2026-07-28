@@ -238,8 +238,8 @@ if submitted:
         for i, step in enumerate(steps):
             status_placeholder.info(step)
         
-        # 각 등급별로 병렬 조회 (타임아웃 5초)
-        status_placeholder.info("🚆 열차 정보 조회 중... (3-5초 소요, 캐시 시 즉시)")
+        # 각 등급별로 병렬 조회 (정차역 포함)
+        status_placeholder.info("🚆 열차 정보 및 정차역 조회 중... (5-10초 소요)")
         
         # 캐싱된 계산 호출 (CPU 절감)
         result = cached_run(origin, dest, int(passengers), travel_time.strftime("%H:%M"))
@@ -309,8 +309,9 @@ if submitted:
         route_str = " → ".join(route_preview) if len(route_preview) <= 6 else (
             " → ".join(route_preview[:3]) + f" → ... ({len(route_preview)}개 역) ... → " + " → ".join(route_preview[-2:])
         )
-        # 선로 기준 경로 표시
-        route_str_with_label = f"<small style='color:#666;'>📍 선로 경로:</small> {route_str}"
+        # 정차역 또는 선로 경로 표시 구분
+        route_label = "정차역" if len(route_preview) > 0 and route_preview[0] != "청량리" else "선로 경로"
+        route_str_with_label = f"<small style='color:#666;'>📍 {route_label}:</small> {route_str}"
         warn = "".join(f'<div class="warn-note">{n}</div>' for n in r.notes if n.startswith("⚠"))
         with col:
             rail_leg = next(l for l in r.legs if l.mode == mode)
@@ -324,6 +325,10 @@ if submitted:
                 train_no = train_info.get("trainno") or train_info.get("train_no") or ""
                 dep_time = train_info.get("deptime") or train_info.get("dep_time") or ""
                 arr_time = train_info.get("arrtime") or train_info.get("arr_time") or ""
+                
+                # 디버깅: train_info가 비어있으면 표시
+                if not train_no:
+                    st.write(f"DEBUG {mode}: train_info = {rail_leg.train_info}")
                 
                 # 모두 있을 때만 표시
                 if train_no and dep_time and arr_time:
@@ -345,7 +350,7 @@ if submitted:
             with st.expander("전체 경로 보기 (역 접근구간 포함)"):
                 _render_leg_detail(r.legs)
 
-    st.caption("📍 선로 경로: Dijkstra 알고리즘 기반 실제 선로상 경유역 (열차 정차역과는 다를 수 있음)")
+    st.caption("📍 정차역: TAGO API 기반 실제 정차역 / 선로 경로: Dijkstra 기반 선로상 경유역")
 
     st.markdown("<br>", unsafe_allow_html=True)
 

@@ -194,8 +194,7 @@ def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, de
                     # 가장 빠른 열차인지 확인
                     if duration < min_duration:
                         min_duration = duration
-                        # 정차역 조회는 비활성화 (초기 로딩 속도 우선)
-                        best_train_no = None  # train.get("trainno", "")
+                        best_train_no = train.get("trainno", "")  # 정차역 조회 활성화
                     
                     dep_time_str = train.get("depplandtime", "")
                     arr_time_str = train.get("arrplandtime", "")

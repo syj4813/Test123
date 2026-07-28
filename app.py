@@ -405,8 +405,9 @@ if st.session_state.get("last_result") is not None:
         with dbg_col2:
             dbg_arr_name = st.text_input("도착역명", value="부산", key="dbg_arr_name")
 
-        if st.button("① 역ID 조회 + KTX 원본 응답 조회"):
+        if st.button("① 역ID 조회 + depPlandTime 후보 5개 동시 테스트"):
             import requests as _requests
+            from datetime import datetime as _dt
             try:
                 _key = st.secrets.get("TAGO_API_KEY")
             except Exception:
@@ -416,7 +417,6 @@ if st.session_state.get("last_result") is not None:
             else:
                 import train_api_threading as _tat
 
-                # MAJOR_STATIONS에 있는지부터 확인
                 st.write(f"MAJOR_STATIONS 목록: {list(_tat.MAJOR_STATIONS.keys())}")
                 _dep_id = _tat._get_station_id(dbg_dep_name, _key)
                 _arr_id = _tat._get_station_id(dbg_arr_name, _key)
@@ -426,21 +426,29 @@ if st.session_state.get("last_result") is not None:
                 if not _dep_id or not _arr_id:
                     st.warning("역ID 조회부터 실패했습니다. 아래 '② 도시코드 역 목록 조회'로 원인을 확인하세요.")
                 else:
-                    _url = f"{_tat.TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
-                    _params = {
-                        "serviceKey": _key,
-                        "pageNo": 1,
-                        "numOfRows": 20,
-                        "_type": "json",
-                        "depPlaceId": _dep_id,
-                        "arrPlaceId": _arr_id,
-                        "depPlandTime": "null",
-                        "trainGradeCode": "00",
+                    _now = _dt.now()
+                    _dep_time_candidates = {
+                        "빈 문자열": "",
+                        "문자열 'null'(기존 코드)": "null",
+                        "오늘 날짜 yyyyMMdd": _now.strftime("%Y%m%d"),
+                        "오늘 날짜+시각 yyyyMMddHHmmss": _now.strftime("%Y%m%d%H%M%S"),
+                        "오늘 자정 yyyyMMdd000000": _now.strftime("%Y%m%d") + "000000",
                     }
-                    _resp = _requests.get(_url, params=_params, timeout=10)
-                    st.write(f"HTTP 상태코드: `{_resp.status_code}`")
-                    st.write(f"실제 요청 URL: `{_resp.url}`")
-                    st.code(_resp.text[:3000], language="json")
+                    _url = f"{_tat.TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
+                    for _label, _dep_time_val in _dep_time_candidates.items():
+                        _params = {
+                            "serviceKey": _key,
+                            "pageNo": 1,
+                            "numOfRows": 20,
+                            "_type": "json",
+                            "depPlaceId": _dep_id,
+                            "arrPlaceId": _arr_id,
+                            "depPlandTime": _dep_time_val,
+                            "trainGradeCode": "00",
+                        }
+                        _resp = _requests.get(_url, params=_params, timeout=10)
+                        st.write(f"**depPlandTime = {_label} (`{_dep_time_val}`)** → 상태코드 `{_resp.status_code}`")
+                        st.code(_resp.text[:1500], language="json")
 
         st.markdown("---")
         if st.button("② 도시코드 역 목록 조회 (서울=11)"):

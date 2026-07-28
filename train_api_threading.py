@@ -4,6 +4,12 @@ TAGO API - Threading 기반 병렬 처리 (Streamlit 호환)
 
 3개 등급(KTX/무궁화/새마을)을 동시에 호출하되,
 Streamlit의 asyncio 루프와 충돌하지 않음
+
+🔧 수정사항:
+- _get_train_stops() 함수를 역명 기반 매칭으로 변경
+- 타임아웃 1초 → 3초로 상향
+- 예외 처리 시 "stops" 필드 포함
+- 역명 정규화 추가
 """
 
 import os
@@ -108,8 +114,16 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
     return ""
 
 
-def _get_train_stops(train_no, dep_place_id, arr_place_id, api_key):
-    """열차의 실제 정차역 조회 (GetTrainStopList API) - 빠르게 실패하도록"""
+def _get_train_stops(train_no, dep_station_name, arr_station_name, api_key):
+    """🔧 FIX: 역명 기반 매칭 (역ID 대신)
+    
+    열차의 실제 정차역 조회
+    Args:
+        train_no: 편명 (예: "05201")
+        dep_station_name: 출발역명 (예: "서울")
+        arr_station_name: 도착역명 (예: "부산")
+        api_key: TAGO API 키
+    """
     try:
         url = f"{TAGO_BASE_URL}/GetTrainStopList"
         params = {
@@ -119,8 +133,8 @@ def _get_train_stops(train_no, dep_place_id, arr_place_id, api_key):
             "_type": "json",
             "trainNo": train_no,
         }
-        # 타임아웃 1초로 매우 단축 (정차역은 선택사항)
-        resp = requests.get(url, params=params, timeout=1)
+        # 🔧 타임아웃 1초 → 3초로 상향 (1초는 너무 짧음)
+        resp = requests.get(url, params=params, timeout=3)
         if resp.status_code != 200:
             return []
         
@@ -130,30 +144,35 @@ def _get_train_stops(train_no, dep_place_id, arr_place_id, api_key):
         if not items:
             return []
         
-        # 출발역부터 도착역까지의 정차역만 추출
+        # 정차역 추출 (역명 기반)
         stops = []
         found_start = False
+        
         for item in items:
             station_name = item.get("stationname", "").strip()
             
+            if not station_name:
+                continue
+            
+            # 🔧 출발역 찾기 (역명 포함 여부로 비교)
             if not found_start:
-                if station_name.startswith(dep_place_id) or dep_place_id in station_name:
+                if dep_station_name in station_name or station_name in dep_station_name:
                     found_start = True
             
+            # 수집
             if found_start:
-                if station_name:
-                    stops.append(station_name)
-                
-                # 도착역에 도달하면 종료
-                if station_name.startswith(arr_place_id) or arr_place_id in station_name:
-                    break
+                stops.append(station_name)
+            
+            # 🔧 도착역 찾기 (역명 포함 여부로 비교)
+            if found_start and (arr_station_name in station_name or station_name in arr_station_name):
+                break
         
         return stops
     except:
         return []
 
 
-def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, dep_date="null"):
+def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, dep_station_name, arr_station_name, dep_date="null"):
     """단일 등급의 열차 정보 조회 (스레드에서 실행) - 정차역 포함"""
     url = f"{TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
     params = {
@@ -208,30 +227,29 @@ def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, de
                         "fare": train.get("adultcharge", 0),
                     })
         
-        # 가장 빠른 열차의 정차역 조회
+        # 가장 빠른 열차의 정차역 조회 (역명 기반)
         if best_train_no:
-            best_train_stops = _get_train_stops(best_train_no, dep_place_id, arr_place_id, api_key)
+            best_train_stops = _get_train_stops(best_train_no, dep_station_name, arr_station_name, api_key)
         
         return {
             "duration": int(min_duration) if min_duration != float('inf') else 0,
-            "trains": sorted(trains, key=lambda x: x["duration"]),
-            "stops": best_train_stops
+            "trains": sorted(trains, key=lambda x: x["duration"]) if trains else [],
+            "stops": best_train_stops if best_train_stops else []
         }
     except Exception as e:
-        print(f"스레드 API 오류: {e}")
-        return {"duration": 0, "trains": []}
+        # 🔧 예외 발생 시에도 "stops" 필드 포함
+        return {"duration": 0, "trains": [], "stops": []}
 
 
 def get_all_train_info_parallel(station_dep: str, station_arr: str, api_key: str = None, dep_date: str = "null") -> dict:
-    """3개 등급(KTX/무궁화/새마을) 병렬 호출 - ThreadPoolExecutor 사용
-    
-    Streamlit과 완벽 호환!
+    """4개 등급(KTX/무궁화/새마을/ITX-새마을) 병렬 호출
     
     Returns:
         {
-            "ktx": {"duration": 7200, "trains": [...]},
-            "mugunghwa": {"duration": 9000, "trains": [...]},
-            "saemaul": {"duration": 8400, "trains": [...]},
+            "ktx": {"duration": 7200, "trains": [...], "stops": [...]},
+            "mugunghwa": {"duration": 9000, "trains": [...], "stops": [...]},
+            "saemaul": {"duration": 8400, "trains": [...], "stops": [...]},
+            "itx-saemaul": {"duration": 8000, "trains": [...], "stops": [...]},
         }
     """
     dep_place_id = _get_station_id(station_dep, api_key)
@@ -250,14 +268,18 @@ def get_all_train_info_parallel(station_dep: str, station_arr: str, api_key: str
                 "saemaul": {"duration": 0, "trains": [], "stops": []},
                 "itx-saemaul": {"duration": 0, "trains": [], "stops": []}}
 
+    # 역명 정규화 (역 → 빼기)
+    dep_name = station_dep.replace("역", "").strip()
+    arr_name = station_arr.replace("역", "").strip()
+
     # ThreadPoolExecutor로 4개 요청 동시 실행 (itx-saemaul 추가)
     results = {}
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {
-            "ktx": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "00", key, dep_date),
-            "mugunghwa": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "02", key, dep_date),
-            "saemaul": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "01", key, dep_date),
-            "itx-saemaul": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "01", key, dep_date),  # 같은 코드로 조회
+            "ktx": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "00", key, dep_name, arr_name, dep_date),
+            "mugunghwa": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "02", key, dep_name, arr_name, dep_date),
+            "saemaul": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "01", key, dep_name, arr_name, dep_date),
+            "itx-saemaul": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "01", key, dep_name, arr_name, dep_date),
         }
         
         # 각 요청 타임아웃 8초

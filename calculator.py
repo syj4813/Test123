@@ -13,6 +13,11 @@
 각 구간(leg)에는 실제 이동 경로 정보(route)도 함께 담긴다.
 - 자차/버스/역·터미널 접근: 카카오 길찾기 API가 알려주는 주요 도로명 목록
 - 철도: 다익스트라 최단경로 상의 경유역 목록 (정차역이 아니라 선로상 경로)
+
+🔧 수정사항:
+- 열차 없을 때 명시적 처리
+- 정차역 조회 개선
+- 기차 대기시간 로직 강화
 """
 
 from dataclasses import dataclass, field
@@ -180,7 +185,7 @@ def _calculate_train_wait_time(travel_time_str: str, access_duration_seconds: in
 
 
 def compute_rail(origin_pt, dest_pt, passengers: int = 1, travel_time_str: str = "00:00") -> Dict[str, ModeResult]:
-    """세 등급(KTX/무궁화/새마을)을 모두 계산해서 {등급: ModeResult} 딕셔너리로 반환.
+    """세 등급(KTX/무궁화/새마을/ITX-새마을)을 모두 계산해서 {등급: ModeResult} 딕셔너리로 반환.
 
     출발/도착역 선정과 역간 실제거리는 등급과 무관하게 동일한 물리적 경로를
     쓰고(같은 선로를 다른 열차가 다닌다고 가정), 등급별 배출계수만 다르게
@@ -209,7 +214,7 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1, travel_time_str: str =
         # TAGO API에서 정차역을 얻을 수 없을 때만 선로 기준 경로 표시
         base_notes.append(f"경로(선로 기준, 실제 정차역과 다를 수 있음): {' - '.join(via_stations)}")
 
-    # Threading으로 3개 등급 병렬 조회 (Streamlit 호환!)
+    # Threading으로 4개 등급 병렬 조회 (Streamlit 호환!)
     train_info_all = train_api_threading.get_all_train_info_parallel(o_st[0], d_st[0])
     
     results = {}
@@ -220,14 +225,14 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1, travel_time_str: str =
         trains = train_data.get("trains", [])
         train_stops = train_data.get("stops", [])  # 실제 정차역
         
-        # 정차역 조회는 비활성화 (초기 로딩 속도 우선)
-        # 필요시 나중에 enable_stops=True로 수정 가능
-        if train_duration_seconds == 0:
+        # 🔧 FIX: 열차가 없으면 명시적으로 처리
+        if train_duration_seconds == 0 or not trains:
             speeds = {"ktx": 200, "saemaul": 80, "mugunghwa": 70, "itx-saemaul": 80}  # km/h
             train_duration_seconds = int(rail_km / speeds[mode] * 3600)
-        
-        # 가장 빠른 열차 정보 (첫 번째)
-        best_train = trains[0] if trains else {}
+            best_train = {}  # 🔧 명시적으로 빈 딕셔너리
+        else:
+            # 가장 빠른 열차 정보 (첫 번째)
+            best_train = trains[0]
         
         # 정차역이 있으면 사용, 없으면 Dijkstra 경로 사용
         route_display = train_stops if train_stops else list(via_stations)
@@ -240,8 +245,9 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1, travel_time_str: str =
             e3["pm25_kg"], 
             route_display,  # 정차역 또는 경유역
             train_duration_seconds,
-            best_train  # 열차 정보 포함
+            best_train  # 열차 정보 포함 (또는 빈 딕셔너리)
         )
+        
         # 기차 대기시간 계산 (역 도착 후 열차 출발까지 기다리는 시간)
         train_wait_seconds = 0
         if best_train and best_train.get("deptime"):

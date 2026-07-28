@@ -150,16 +150,23 @@ if submitted:
         st.error("출발지와 도착지를 모두 입력해주세요.")
         st.stop()
 
-    with st.spinner("주소 확인 및 경로 계산 중..."):
-        try:
+    try:
+        with st.status("📊 계산 중...", expanded=True) as status:
+            st.write("🗺️ 주소 확인 중...")
+            st.write("🚗 자차 경로 계산 중...")
+            st.write("🚌 버스 경로 및 소요시간 조회 중...")
+            st.write("🚆 철도 경로 및 소요시간 조회 중 (TAGO API - 시간 소요)...")
+            
             result = run(origin, dest, passengers=int(passengers))
-        except Exception as e:
-            st.error(f"계산 중 문제가 발생했습니다: {e}")
-            st.info(
-                "흔한 원인: 주소가 너무 모호함 / API 키 미설정·오류 / "
-                "카카오·구글 API 활성화 상태 확인 필요"
-            )
-            st.stop()
+            
+            status.update(label="✅ 계산 완료!", state="complete")
+    except Exception as e:
+        st.error(f"계산 중 문제가 발생했습니다: {e}")
+        st.info(
+            "흔한 원인: 주소가 너무 모호함 / API 키 미설정·오류 / "
+            "카카오·구글 API 활성화 상태 확인 필요"
+        )
+        st.stop()
 
     st.success(f"탑승 인원 {passengers}명 기준으로 계산했습니다.")
     st.info(f"📅 {travel_date.strftime('%Y년 %m월 %d일')} 🕐 {travel_time.strftime('%H:%M')} 출발 기준")

@@ -11,19 +11,45 @@
 """
 
 import streamlit as st
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+import pytz
 
 from calculator import run, RAIL_GRADES
 from transit_distance import format_time
 
-# CPU 사용량 최소화: 계산 결과 1시간 캐싱
-@st.cache_data(ttl=3600)
+# KST 타임존 설정
+KST = pytz.timezone('Asia/Seoul')
+
+# Session state 초기화 (사용자 입력값 유지)
+if 'travel_date' not in st.session_state:
+    st.session_state.travel_date = date.today()
+if 'travel_time' not in st.session_state:
+    st.session_state.travel_time = datetime.now(KST).time()
+if 'origin' not in st.session_state:
+    st.session_state.origin = ""
+if 'dest' not in st.session_state:
+    st.session_state.dest = ""
+if 'passengers' not in st.session_state:
+    st.session_state.passengers = 1
+
+# CPU 사용량 최소화: 계산 결과 캐싱 (TTL: 30분, 변경감지: origin+dest+passengers)
+@st.cache_data(ttl=1800, show_spinner=False)  
 def cached_run(origin, dest, passengers):
-    """API 호출 결과를 1시간 동안 캐싱하여 CPU 절감"""
+    """API 호출 결과를 30분 동안 캐싱하여 CPU 절감"""
     return run(origin, dest, passengers=passengers)
 
-MODE_LABEL = {"ktx": "KTX", "mugunghwa": "무궁화호", "saemaul": "새마을호"}
-MODE_COLOR = {"ktx": "#0B6E4F", "mugunghwa": "#3A8DFF", "saemaul": "#2FB380"}
+MODE_LABEL = {
+    "ktx": "KTX", 
+    "mugunghwa": "무궁화호", 
+    "saemaul": "새마을호",
+    "itx-saemaul": "ITX-새마을"
+}
+MODE_COLOR = {
+    "ktx": "#0B6E4F", 
+    "mugunghwa": "#3A8DFF", 
+    "saemaul": "#2FB380",
+    "itx-saemaul": "#FF8C42"  # 주황색으로 구분
+}
 
 LEG_LABEL = {
     "car": "🚗 전체 구간 (자차)",
@@ -35,6 +61,7 @@ LEG_LABEL = {
     "ktx": "🚄 역 → 역 (KTX)",
     "mugunghwa": "🚆 역 → 역 (무궁화호)",
     "saemaul": "🚆 역 → 역 (새마을호)",
+    "itx-saemaul": "🚆 역 → 역 (ITX-새마을)",
 }
 
 
@@ -145,18 +172,42 @@ st.markdown(
 with st.form("input_form"):
     c1, c2, c3 = st.columns([1, 2, 2])
     with c1:
-        passengers = st.number_input("탑승 인원수", min_value=1, value=1, step=1)
+        passengers = st.number_input(
+            "탑승 인원수", 
+            min_value=1, 
+            value=st.session_state.passengers, 
+            step=1,
+            key="passengers_input"
+        )
     with c2:
-        origin = st.text_input("출발지", placeholder="예: 서울시 강남구 테헤란로 152")
+        origin = st.text_input(
+            "출발지", 
+            placeholder="예: 서울시 강남구 테헤란로 152",
+            value=st.session_state.origin,
+            key="origin_input"
+        )
     with c3:
-        dest = st.text_input("도착지", placeholder="예: 부산 해운대구 달맞이길 30")
+        dest = st.text_input(
+            "도착지", 
+            placeholder="예: 부산 해운대구 달맞이길 30",
+            value=st.session_state.dest,
+            key="dest_input"
+        )
     
-    # 날짜/시간 선택
+    # 날짜/시간 선택 (KST 기본값)
     col_date, col_time = st.columns(2)
     with col_date:
-        travel_date = st.date_input("여행 날짜", value=date.today())
+        travel_date = st.date_input(
+            "여행 날짜", 
+            value=st.session_state.travel_date,
+            key="date_input"
+        )
     with col_time:
-        travel_time = st.time_input("출발시간 (참고용)", value=datetime.now().time())
+        travel_time = st.time_input(
+            "출발시간 (참고용)", 
+            value=st.session_state.travel_time,
+            key="time_input"
+        )
     
     submitted = st.form_submit_button("환경 편익 계산하기", use_container_width=True)
 
@@ -164,6 +215,13 @@ if submitted:
     if not origin.strip() or not dest.strip():
         st.error("출발지와 도착지를 모두 입력해주세요.")
         st.stop()
+
+    # 입력값 저장 (다음 검색 시 유지)
+    st.session_state.origin = origin
+    st.session_state.dest = dest
+    st.session_state.passengers = passengers
+    st.session_state.travel_date = travel_date
+    st.session_state.travel_time = travel_time
 
     try:
         progress_placeholder = st.empty()
@@ -253,13 +311,17 @@ if submitted:
             rail_leg = next(l for l in r.legs if l.mode == mode)
             time_str = f" · {format_time(r.total_duration_seconds)}" if r.total_duration_seconds > 0 else ""
             
-            # 열차 정보 (편명, 출발/도착 시간)
+            # 열차 정보 (편명, 출발/도착 시간) - 안 나타나면 디버깅용
             train_info_str = ""
-            if rail_leg.train_info and rail_leg.train_info.get("trainno"):
-                train_no = rail_leg.train_info.get("trainno", "")
-                dep_time = rail_leg.train_info.get("deptime", "")
-                arr_time = rail_leg.train_info.get("arrtime", "")
-                train_info_str = f'<div class="result-sub" style="color:#FF6B6B; font-weight: bold;">🚆 편명: {train_no} · {dep_time} → {arr_time}</div>'
+            if rail_leg.train_info:
+                # train_info가 dict 형태인지 확인
+                if isinstance(rail_leg.train_info, dict):
+                    train_no = rail_leg.train_info.get("trainno") or rail_leg.train_info.get("train_no") or ""
+                    dep_time = rail_leg.train_info.get("deptime") or rail_leg.train_info.get("dep_time") or ""
+                    arr_time = rail_leg.train_info.get("arrtime") or rail_leg.train_info.get("arr_time") or ""
+                    
+                    if train_no and dep_time and arr_time:
+                        train_info_str = f'<div class="result-sub" style="color:#FF6B6B; font-weight: bold;">🚆 {mode.upper()}: {train_no} · {dep_time} → {arr_time}</div>'
             
             st.markdown(
                 f"""

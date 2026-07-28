@@ -18,6 +18,7 @@ TRAIN_GRADE_MAP = {
     "ktx": "00",
     "saemaul": "01",
     "mugunghwa": "02",
+    "itx-saemaul": "01",  # ITX-새마을도 같은 코드로 조회
 }
 
 MAJOR_STATIONS = {
@@ -122,7 +123,8 @@ def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, de
     }
 
     try:
-        resp = requests.get(url, params=params, timeout=10)
+        # 타임아웃 5초로 단축 (Streamlit Cloud 최적화)
+        resp = requests.get(url, params=params, timeout=5)
         if resp.status_code != 200:
             return {"duration": 0, "trains": []}
         
@@ -192,18 +194,30 @@ def get_all_train_info_parallel(station_dep: str, station_arr: str, api_key: str
                 "mugunghwa": {"duration": 0, "trains": []},
                 "saemaul": {"duration": 0, "trains": []}}
 
-    # ThreadPoolExecutor로 3개 요청 동시 실행
+    # ThreadPoolExecutor로 4개 요청 동시 실행 (itx-saemaul 추가)
     results = {}
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {
             "ktx": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "00", key, dep_date),
             "mugunghwa": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "02", key, dep_date),
             "saemaul": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "01", key, dep_date),
+            "itx-saemaul": executor.submit(_fetch_single_train_info, dep_place_id, arr_place_id, "01", key, dep_date),  # 같은 코드로 조회
         }
         
+        # 각 요청 타임아웃 8초
         for grade, future in futures.items():
             try:
-                results[grade] = future.result(timeout=15)
+                result = future.result(timeout=8)
+                
+                # itx-saemaul인 경우 "ITX" 포함 열차만 필터링
+                if grade == "itx-saemaul":
+                    filtered_trains = [
+                        t for t in result.get("trains", []) 
+                        if "ITX" in t.get("traingradename", "")
+                    ]
+                    result["trains"] = filtered_trains
+                
+                results[grade] = result
             except:
                 results[grade] = {"duration": 0, "trains": []}
     

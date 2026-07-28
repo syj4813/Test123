@@ -145,7 +145,7 @@ def compute_bus(origin_pt, dest_pt, passengers: int = 1) -> ModeResult:
     return ModeResult(total_km, total_co2, total_pm25, legs, notes, total_duration)
 
 
-RAIL_GRADES = ["ktx", "mugunghwa", "saemaul"]
+RAIL_GRADES = ["ktx", "mugunghwa", "saemaul", "itx-saemaul"]
 
 
 def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResult]:

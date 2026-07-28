@@ -29,6 +29,7 @@ FACTORS = {
     "express_bus": EmissionFactor(0.05472, 2.34718e-5, per_passenger=True),
     "mugunghwa": EmissionFactor(0.08054, 2.72769e-5, per_passenger=True),
     "saemaul": EmissionFactor(0.04196, 1.53201e-5, per_passenger=True),
+    "itx-saemaul": EmissionFactor(0.04196, 1.53201e-5, per_passenger=True),  # 새마을호와 동일
     "ktx": EmissionFactor(0.03810, 1.99560e-5, per_passenger=True),
 }
 

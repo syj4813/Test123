@@ -8,11 +8,6 @@
 팀원과 같은 네트워크에서 공유하려면:
     streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 그다음 팀원은 http://<이 컴퓨터의 사내망 IP>:8501 로 접속.
-
-🔧 수정사항:
-- 캐시 TTL 1800초 → 300초로 단축
-- 편명 표시 로직 강화
-- 경로 라벨 개선
 """
 
 import streamlit as st
@@ -37,12 +32,10 @@ if 'dest' not in st.session_state:
 if 'passengers' not in st.session_state:
     st.session_state.passengers = 1
 
-# 🔧 CPU 사용량 최소화: 계산 결과 캐싱 (TTL: 5분, 변경감지: origin+dest+passengers)
-# 기존: ttl=1800 (30분) → 문제: 오래된 빈 결과를 계속 반환
-# 개선: ttl=300 (5분) → 신선한 데이터 유지
-@st.cache_data(ttl=300, show_spinner=False)  
+# CPU 사용량 최소화: 계산 결과 캐싱 (TTL: 30분, 변경감지: origin+dest+passengers)
+@st.cache_data(ttl=1800, show_spinner=False)  
 def cached_run(origin, dest, passengers, travel_time_str):
-    """API 호출 결과를 5분 동안 캐싱하여 CPU 절감"""
+    """API 호출 결과를 30분 동안 캐싱하여 CPU 절감"""
     return run(origin, dest, passengers=passengers, travel_time_str=travel_time_str)
 
 MODE_LABEL = {
@@ -107,38 +100,54 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap');
+
+    html, body, [class*="css"] { font-family: 'IBM Plex Sans KR', sans-serif; }
+
+    .block-container { padding-top: 2.2rem; max-width: 1100px; }
+
+    .hero {
+        background: linear-gradient(135deg, #0B6E4F 0%, #0E4B3A 100%);
+        color: #F4FBF7;
+        border-radius: 18px;
+        padding: 28px 32px;
+        margin-bottom: 24px;
+    }
+    .hero h1 { margin: 0 0 6px 0; font-size: 1.7rem; font-weight: 700; }
+    .hero p { margin: 0; opacity: 0.85; font-size: 0.95rem; }
+
     .result-card {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        padding: 16px;
-        border-radius: 12px;
-        border-left: 4px solid #0B6E4F;
-        margin-bottom: 12px;
+        border: 1px solid #E4E9E7;
+        border-radius: 14px;
+        padding: 18px 20px;
+        background: #FFFFFF;
     }
-    .result-metric {
-        font-size: 24px;
-        font-weight: bold;
-        color: #0B6E4F;
-        margin: 8px 0;
-    }
-    .result-sub {
-        font-size: 14px;
-        color: #555;
-    }
+    .result-card h4 { margin-top: 0; margin-bottom: 4px; }
+    .result-metric { font-size: 1.6rem; font-weight: 700; margin: 2px 0; }
+    .result-sub { color: #6B7A76; font-size: 0.85rem; }
+
     .route-line {
-        background: #fafafa;
-        padding: 8px;
-        border-radius: 6px;
-        font-size: 12px;
-        color: #666;
+        font-size: 0.82rem;
+        color: #46564F;
+        background: #F1F6F3;
+        border-radius: 8px;
+        padding: 6px 10px;
         margin-top: 6px;
-        word-break: break-word;
+        word-break: break-all;
+    }
+    .benefit-pill {
+        display: inline-block;
+        background: #EAF7EF;
+        color: #0B6E4F;
+        border-radius: 999px;
+        padding: 4px 14px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        margin-right: 8px;
     }
     .warn-note {
-        background: #fff3cd;
-        padding: 6px;
-        border-radius: 4px;
-        font-size: 12px;
-        color: #856404;
+        color: #A9660A;
+        font-size: 0.82rem;
         margin-top: 4px;
     }
     </style>
@@ -146,207 +155,224 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---------------------------------------------------------------------------
-# 헤더
-# ---------------------------------------------------------------------------
-st.markdown("# 🚆 코레일 환경편익 계산기")
-st.markdown("**출발지 → 도착지 경로에서 자차/버스/철도 3가지 교통수단의 탄소·미세먼지 배출량을 비교합니다.**")
-st.markdown("**철도 이용 시 자차/버스 대비 환경 편익을 한눈에 파악하세요.**")
-st.markdown("")
+st.markdown(
+    """
+    <div class="hero">
+      <h1>🚆 코레일 이용 환경 편익 계산기</h1>
+      <p>출발지·도착지·탑승 인원을 입력하면 자차/고속버스/철도의 탄소·미세먼지
+      배출량을 실제 도로거리·역간거리 기준으로 비교합니다.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ---------------------------------------------------------------------------
-# 입력 양식
+# 입력
 # ---------------------------------------------------------------------------
-col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
+with st.form("input_form"):
+    c1, c2, c3 = st.columns([1, 2, 2])
+    with c1:
+        passengers = st.number_input(
+            "탑승 인원수", 
+            min_value=1, 
+            value=st.session_state.passengers, 
+            step=1,
+            key="passengers_input"
+        )
+    with c2:
+        origin = st.text_input(
+            "출발지", 
+            placeholder="예: 서울시 강남구 테헤란로 152",
+            value=st.session_state.origin,
+            key="origin_input"
+        )
+    with c3:
+        dest = st.text_input(
+            "도착지", 
+            placeholder="예: 부산 해운대구 달맞이길 30",
+            value=st.session_state.dest,
+            key="dest_input"
+        )
+    
+    # 날짜/시간 선택 (KST 기본값)
+    col_date, col_time = st.columns(2)
+    with col_date:
+        travel_date = st.date_input(
+            "여행 날짜", 
+            value=st.session_state.travel_date,
+            key="date_input"
+        )
+    with col_time:
+        travel_time = st.time_input(
+            "출발시간 (참고용)", 
+            value=st.session_state.travel_time,
+            key="time_input"
+        )
+    
+    submitted = st.form_submit_button("환경 편익 계산하기", use_container_width=True)
 
-with col1:
-    origin = st.text_input(
-        "📍 출발지 (주소·지명)",
-        value=st.session_state.origin,
-        key="origin_input",
-        placeholder="예: 서울역, 강남역"
-    )
+if submitted:
+    if not origin.strip() or not dest.strip():
+        st.error("출발지와 도착지를 모두 입력해주세요.")
+        st.stop()
+
+    # 입력값 저장 (다음 검색 시 유지)
     st.session_state.origin = origin
-
-with col2:
-    dest = st.text_input(
-        "📍 도착지 (주소·지명)",
-        value=st.session_state.dest,
-        key="dest_input",
-        placeholder="예: 부산역, 목포"
-    )
     st.session_state.dest = dest
-
-with col3:
-    passengers = st.number_input(
-        "👥 탑승인원",
-        min_value=1,
-        max_value=20,
-        value=st.session_state.passengers,
-        key="passengers_input"
-    )
-    st.session_state.passengers = int(passengers)
-
-with col4:
-    search_btn = st.button("🔍 검색", use_container_width=True)
-
-# 여행 시간 선택 (선택사항)
-col_time1, col_time2 = st.columns([1, 1])
-
-with col_time1:
-    travel_date = st.date_input(
-        "📅 여행 날짜 (선택사항)",
-        value=st.session_state.travel_date,
-        key="travel_date_input"
-    )
+    st.session_state.passengers = passengers
     st.session_state.travel_date = travel_date
-
-with col_time2:
-    travel_time = st.time_input(
-        "🕐 출발 시각 (선택사항)",
-        value=st.session_state.travel_time,
-        key="travel_time_input"
-    )
     st.session_state.travel_time = travel_time
 
-# ---------------------------------------------------------------------------
-# 결과
-# ---------------------------------------------------------------------------
-if search_btn or (origin and dest):
-    if not origin or not dest:
-        st.warning("⚠️ 출발지와 도착지를 입력하세요.")
-    else:
+    try:
+        progress_placeholder = st.empty()
         status_placeholder = st.empty()
-        status_placeholder.info("📊 계산 중... (5-10초 소요)")
         
-        try:
-            travel_time_str = travel_time.strftime("%H:%M")
-            result = cached_run(origin, dest, int(passengers), travel_time_str)
-            status_placeholder.empty()
+        # 각 단계별 진행 상황 표시
+        steps = [
+            "🗺️ 주소 확인 중...",
+            "🚗 자차 경로 계산 중...",
+            "🚌 버스 경로 및 소요시간 조회 중...",
+            "🚆 철도 경로 및 소요시간 조회 중 (TAGO API - 시간 소요)...",
+        ]
+        
+        for i, step in enumerate(steps):
+            status_placeholder.info(step)
+        
+        # 각 등급별로 병렬 조회 (정차역 포함)
+        status_placeholder.info("🚆 열차 정보 및 정차역 조회 중... (5-10초 소요)")
+        
+        # 캐싱된 계산 호출 (CPU 절감)
+        result = cached_run(origin, dest, int(passengers), travel_time.strftime("%H:%M"))
+        
+        progress_placeholder.success("✅ 계산 완료!")
+        status_placeholder.empty()
+        
+    except Exception as e:
+        st.error(f"계산 중 문제가 발생했습니다: {e}")
+        st.info(
+            "흔한 원인: 주소가 너무 모호함 / API 키 미설정·오류 / "
+            "카카오·구글 API 활성화 상태 확인 필요"
+        )
+        st.stop()
+
+    st.success(f"탑승 인원 {passengers}명 기준으로 계산했습니다.")
+    st.info(f"📅 {travel_date.strftime('%Y년 %m월 %d일')} 🕐 {travel_time.strftime('%H:%M')} 출발 기준")
+
+    # ------------------------------------------------------------------
+    # 자차 / 고속버스
+    # ------------------------------------------------------------------
+    col_car, col_bus = st.columns(2)
+
+    with col_car:
+        time_str = f" · {format_time(result.car.total_duration_seconds)}" if result.car.total_duration_seconds > 0 else ""
+        st.markdown(
+            f"""
+            <div class="result-card">
+              <h4>🚗 자차</h4>
+              <div class="result-metric">{result.car.total_co2_kg:.2f} kg CO2eq</div>
+              <div class="result-sub">미세먼지 {result.car.total_pm25_kg*1000:.2f} g · {result.car.total_km:.1f} km{time_str}</div>
+              <div class="route-line">{" → ".join(result.car.legs[0].route) if result.car.legs[0].route else "경로 정보 없음"}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with col_bus:
+        bus_leg = next(l for l in result.bus.legs if l.mode == "express_bus")
+        time_str = f" · {format_time(result.bus.total_duration_seconds)}" if result.bus.total_duration_seconds > 0 else ""
+        st.markdown(
+            f"""
+            <div class="result-card">
+              <h4>🚌 고속버스</h4>
+              <div class="result-metric">{result.bus.total_co2_kg:.2f} kg CO2eq</div>
+              <div class="result-sub">미세먼지 {result.bus.total_pm25_kg*1000:.2f} g · {result.bus.total_km:.1f} km{time_str}</div>
+              <div class="route-line">{" → ".join(bus_leg.route) if bus_leg.route else "경로 정보 없음"}</div>
+              <div class="result-sub" style="margin-top:6px;">{" / ".join(result.bus.notes)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.expander("전체 경로 보기 (출발지→터미널 포함)"):
+            _render_leg_detail(result.bus.legs)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ------------------------------------------------------------------
+    # 철도 (3등급)
+    # ------------------------------------------------------------------
+    st.markdown("#### 🚄 철도 (등급별)")
+    rail_cols = st.columns(4)  # 4개 등급이므로 4개 열
+    for col, mode in zip(rail_cols, RAIL_GRADES):
+        r = result.rail[mode]
+        rail_leg = next(l for l in r.legs if l.mode == mode)
+        route_preview = rail_leg.route
+        route_str = " → ".join(route_preview) if len(route_preview) <= 6 else (
+            " → ".join(route_preview[:3]) + f" → ... ({len(route_preview)}개 역) ... → " + " → ".join(route_preview[-2:])
+        )
+        # 정차역 또는 선로 경로 표시 구분
+        route_label = "정차역" if len(route_preview) > 0 and route_preview[0] != "청량리" else "선로 경로"
+        route_str_with_label = f"<small style='color:#666;'>📍 {route_label}:</small> {route_str}"
+        warn = "".join(f'<div class="warn-note">{n}</div>' for n in r.notes if n.startswith("⚠"))
+        with col:
+            rail_leg = next(l for l in r.legs if l.mode == mode)
+            time_str = f" · {format_time(r.total_duration_seconds)}" if r.total_duration_seconds > 0 else ""
             
-            # 자차
-            st.markdown("#### 🚗 자동차")
-            car_leg = result.car.legs[0]
-            time_str = f" · {format_time(result.car.total_duration_seconds)}" if result.car.total_duration_seconds > 0 else ""
+            # 열차 정보 (편명, 출발/도착 시간)
+            train_info_str = ""
+            if rail_leg.train_info and isinstance(rail_leg.train_info, dict):
+                train_info = rail_leg.train_info
+                # 여러 필드명 시도
+                train_no = train_info.get("trainno") or train_info.get("train_no") or ""
+                dep_time = train_info.get("deptime") or train_info.get("dep_time") or ""
+                arr_time = train_info.get("arrtime") or train_info.get("arr_time") or ""
+                
+                # 모두 있을 때만 표시
+                if train_no and dep_time and arr_time:
+                    train_info_str = f'<div class="result-sub" style="color:#FF6B6B; font-weight: bold;">🚆 편명 {train_no} · {dep_time}→{arr_time}</div>'
+            
             st.markdown(
                 f"""
-                <div class="result-card">
-                  <h4>🚗 자동차</h4>
-                  <div class="result-metric">{result.car.total_co2_kg:.2f} kg CO2eq</div>
-                  <div class="result-sub">미세먼지 {result.car.total_pm25_kg*1000:.2f} g · {result.car.total_km:.1f} km{time_str}</div>
-                  <div class="route-line">{" → ".join(car_leg.route) if car_leg.route else "경로 정보 없음"}</div>
+                <div class="result-card" style="border-top:4px solid {MODE_COLOR[mode]};">
+                  <h4>{MODE_LABEL[mode]}</h4>
+                  <div class="result-metric" style="color:{MODE_COLOR[mode]};">{r.total_co2_kg:.2f} kg CO2eq</div>
+                  <div class="result-sub">미세먼지 {r.total_pm25_kg*1000:.2f} g · {r.total_km:.1f} km{time_str}</div>
+                  {train_info_str}
+                  <div class="route-line">{route_str_with_label}</div>
+                  {warn}
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            
-            # 고속버스
-            st.markdown("#### 🚌 고속버스")
-            bus_leg = next(l for l in result.bus.legs if l.mode == "express_bus")
-            time_str = f" · {format_time(result.bus.total_duration_seconds)}" if result.bus.total_duration_seconds > 0 else ""
-            st.markdown(
-                f"""
-                <div class="result-card">
-                  <h4>🚌 고속버스</h4>
-                  <div class="result-metric">{result.bus.total_co2_kg:.2f} kg CO2eq</div>
-                  <div class="result-sub">미세먼지 {result.bus.total_pm25_kg*1000:.2f} g · {result.bus.total_km:.1f} km{time_str}</div>
-                  <div class="route-line">{" → ".join(bus_leg.route) if bus_leg.route else "경로 정보 없음"}</div>
-                  <div class="result-sub" style="margin-top:6px;">{" / ".join(result.bus.notes)}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+            with st.expander("전체 경로 보기 (역 접근구간 포함)"):
+                _render_leg_detail(r.legs)
+
+    st.caption("📍 정차역: TAGO API 기반 실제 정차역 / 선로 경로: Dijkstra 기반 선로상 경유역")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ------------------------------------------------------------------
+    # 편익 요약
+    # ------------------------------------------------------------------
+    st.markdown("#### 🌱 철도 이용 시 환경 편익")
+    b_car = result.benefit_vs_car()
+    b_bus = result.benefit_vs_bus()
+
+    for mode in RAIL_GRADES:
+        bc, bb = b_car[mode], b_bus[mode]
+        st.markdown(
+            f"""
+            <div style="margin-bottom:10px;">
+              <b>{MODE_LABEL[mode]}</b><br>
+              <span class="benefit-pill">자차 대비 CO2 {bc['co2_kg_saved']:.2f} kg 절감</span>
+              <span class="benefit-pill">자차 대비 PM2.5 {bc['pm25_kg_saved']*1000:.2f} g 절감</span>
+              <span class="benefit-pill">버스 대비 CO2 {bb['co2_kg_saved']:.2f} kg 절감</span>
+              <span class="benefit-pill">버스 대비 PM2.5 {bb['pm25_kg_saved']*1000:.2f} g 절감</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if bb["co2_kg_saved"] < 0:
+            st.caption(
+                f"※ {MODE_LABEL[mode]}는 배출계수 자체가 고속버스보다 높아 "
+                "버스 대비 편익이 음수(더 많이 배출)로 나올 수 있습니다."
             )
-            with st.expander("전체 경로 보기 (출발지→터미널 포함)"):
-                _render_leg_detail(result.bus.legs)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # 철도 (4등급)
-            st.markdown("#### 🚄 철도 (등급별)")
-            rail_cols = st.columns(4)  # 4개 등급이므로 4개 열
-            for col, mode in zip(rail_cols, RAIL_GRADES):
-                r = result.rail[mode]
-                rail_leg = next(l for l in r.legs if l.mode == mode)
-                route_preview = rail_leg.route
-                route_str = " → ".join(route_preview) if len(route_preview) <= 6 else (
-                    " → ".join(route_preview[:3]) + f" → ... ({len(route_preview)}개 역) ... → " + " → ".join(route_preview[-2:])
-                )
-                
-                # 🔧 경로 라벨: 정차역 vs 선로 경로
-                # 정차역은 실제 역명들이고, 선로 경로는 Dijkstra 결과
-                is_actual_stops = len(route_preview) > 0 and route_preview != list(rail_leg.route)
-                route_label = "정차역" if len(route_preview) > 0 else "선로 경로"
-                route_str_with_label = f"<small style='color:#666;'>📍 {route_label}:</small> {route_str}"
-                
-                warn = "".join(f'<div class="warn-note">{n}</div>' for n in r.notes if n.startswith("⚠"))
-                
-                with col:
-                    time_str = f" · {format_time(r.total_duration_seconds)}" if r.total_duration_seconds > 0 else ""
-                    
-                    # 🔧 열차 정보 (편명, 출발/도착 시간) - 강화된 로직
-                    train_info_str = ""
-                    if rail_leg.train_info and isinstance(rail_leg.train_info, dict) and rail_leg.train_info:
-                        train_info = rail_leg.train_info
-                        train_no = train_info.get("trainno") or train_info.get("train_no") or ""
-                        dep_time = train_info.get("deptime") or train_info.get("dep_time") or ""
-                        arr_time = train_info.get("arrtime") or train_info.get("arr_time") or ""
-                        
-                        # 모두 있을 때만 표시
-                        if train_no and dep_time and arr_time:
-                            train_info_str = f'<div class="result-sub" style="color:#FF6B6B; font-weight: bold;">🚆 편명 {train_no} · {dep_time}→{arr_time}</div>'
-                    
-                    st.markdown(
-                        f"""
-                        <div class="result-card">
-                          <h4>{MODE_LABEL.get(mode, mode)}</h4>
-                          <div class="result-metric">{r.total_co2_kg:.2f} kg CO2eq</div>
-                          <div class="result-sub">미세먼지 {r.total_pm25_kg*1000:.2f} g · {r.total_km:.1f} km{time_str}</div>
-                          {train_info_str}
-                          <div class="route-line">{route_str_with_label}</div>
-                          {warn}
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                    
-                    with st.expander("전체 경로 보기"):
-                        _render_leg_detail(r.legs)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # 환경 편익 비교
-            st.markdown("#### 🌍 환경 편익 분석")
-            st.markdown("**철도 vs 자동차**")
-            
-            benefits_vs_car = result.benefit_vs_car()
-            benefits_car_cols = st.columns(4)
-            for col, mode in zip(benefits_car_cols, RAIL_GRADES):
-                with col:
-                    b = benefits_vs_car[mode]
-                    co2_saved = b["co2_kg_saved"]
-                    pm25_saved = b["pm25_kg_saved"]
-                    st.metric(
-                        f"{MODE_LABEL.get(mode, mode)} 절감량",
-                        f"{co2_saved:.2f} kg CO2",
-                        delta=f"{pm25_saved*1000:.1f}g PM2.5",
-                    )
-
-            st.markdown("**철도 vs 고속버스**")
-            benefits_vs_bus = result.benefit_vs_bus()
-            benefits_bus_cols = st.columns(4)
-            for col, mode in zip(benefits_bus_cols, RAIL_GRADES):
-                with col:
-                    b = benefits_vs_bus[mode]
-                    co2_saved = b["co2_kg_saved"]
-                    pm25_saved = b["pm25_kg_saved"]
-                    st.metric(
-                        f"{MODE_LABEL.get(mode, mode)} 절감량",
-                        f"{co2_saved:.2f} kg CO2",
-                        delta=f"{pm25_saved*1000:.1f}g PM2.5",
-                    )
-
-        except Exception as e:
-            status_placeholder.empty()
-            st.error(f"❌ 계산 중 오류가 발생했습니다: {str(e)}")
-            with st.expander("기술 상세 정보"):
-                st.write(str(e))

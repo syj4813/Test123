@@ -298,7 +298,7 @@ if submitted:
     # 철도 (3등급)
     # ------------------------------------------------------------------
     st.markdown("#### 🚄 철도 (등급별)")
-    rail_cols = st.columns(3)
+    rail_cols = st.columns(4)  # 4개 등급이므로 4개 열
     for col, mode in zip(rail_cols, RAIL_GRADES):
         r = result.rail[mode]
         rail_leg = next(l for l in r.legs if l.mode == mode)
@@ -306,6 +306,9 @@ if submitted:
         route_str = " → ".join(route_preview) if len(route_preview) <= 6 else (
             " → ".join(route_preview[:3]) + f" → ... ({len(route_preview)}개 역) ... → " + " → ".join(route_preview[-2:])
         )
+        # 정차역 또는 선로 경로 표시 구분
+        route_label = "정차역" if len(route_preview) > 0 else "경로"
+        route_str_with_label = f"<small style='color:#666;'>📍 {route_label}:</small> {route_str}"
         warn = "".join(f'<div class="warn-note">{n}</div>' for n in r.notes if n.startswith("⚠"))
         with col:
             rail_leg = next(l for l in r.legs if l.mode == mode)
@@ -330,7 +333,7 @@ if submitted:
                   <div class="result-metric" style="color:{MODE_COLOR[mode]};">{r.total_co2_kg:.2f} kg CO2eq</div>
                   <div class="result-sub">미세먼지 {r.total_pm25_kg*1000:.2f} g · {r.total_km:.1f} km{time_str}</div>
                   {train_info_str}
-                  <div class="route-line">{route_str}</div>
+                  <div class="route-line">{route_str_with_label}</div>
                   {warn}
                 </div>
                 """,
@@ -339,7 +342,7 @@ if submitted:
             with st.expander("전체 경로 보기 (역 접근구간 포함)"):
                 _render_leg_detail(r.legs)
 
-    st.caption("경유 경로는 선로 기준 실제 경로이며, 열차가 그 역들에 정차한다는 뜻은 아닙니다.")
+    st.caption("📍 정차역: TAGO API 기반 실제 정차역 / 선로 경로: Dijkstra 기반 선로상 경유역")
 
     st.markdown("<br>", unsafe_allow_html=True)
 

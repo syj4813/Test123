@@ -108,8 +108,52 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
     return ""
 
 
+def _get_train_stops(train_no, dep_place_id, arr_place_id, api_key):
+    """열차의 실제 정차역 조회 (GetTrainStopList API)"""
+    try:
+        url = f"{TAGO_BASE_URL}/GetTrainStopList"
+        params = {
+            "serviceKey": api_key,
+            "pageNo": 1,
+            "numOfRows": 100,
+            "_type": "json",
+            "trainNo": train_no,
+        }
+        resp = requests.get(url, params=params, timeout=3)
+        if resp.status_code != 200:
+            return []
+        
+        data = resp.json()
+        items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+        
+        if not items:
+            return []
+        
+        # 출발역부터 도착역까지의 정차역만 추출
+        stops = []
+        found_start = False
+        for item in items:
+            station_name = item.get("stationname", "").strip()
+            
+            if not found_start:
+                if station_name.startswith(dep_place_id) or dep_place_id in station_name:
+                    found_start = True
+            
+            if found_start:
+                if station_name:
+                    stops.append(station_name)
+                
+                # 도착역에 도달하면 종료
+                if station_name.startswith(arr_place_id) or arr_place_id in station_name:
+                    break
+        
+        return stops
+    except:
+        return []
+
+
 def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, dep_date="null"):
-    """단일 등급의 열차 정보 조회 (스레드에서 실행)"""
+    """단일 등급의 열차 정보 조회 (스레드에서 실행) - 정차역 포함"""
     url = f"{TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
     params = {
         "serviceKey": api_key,
@@ -126,16 +170,18 @@ def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, de
         # 타임아웃 5초로 단축 (Streamlit Cloud 최적화)
         resp = requests.get(url, params=params, timeout=5)
         if resp.status_code != 200:
-            return {"duration": 0, "trains": []}
+            return {"duration": 0, "trains": [], "stops": []}
         
         data = resp.json()
         items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
         
         if not items:
-            return {"duration": 0, "trains": []}
+            return {"duration": 0, "trains": [], "stops": []}
 
         min_duration = float('inf')
         trains = []
+        best_train_stops = []
+        best_train_no = None
         
         for train in items:
             dep_time = _parse_time(train.get("depplandtime", ""))
@@ -144,8 +190,10 @@ def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, de
             if dep_time > 0 and arr_time > 0:
                 duration = arr_time - dep_time
                 if duration > 0:
+                    # 가장 빠른 열차인지 확인
                     if duration < min_duration:
                         min_duration = duration
+                        best_train_no = train.get("trainno", "")
                     
                     dep_time_str = train.get("depplandtime", "")
                     arr_time_str = train.get("arrplandtime", "")
@@ -159,9 +207,14 @@ def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, de
                         "fare": train.get("adultcharge", 0),
                     })
         
+        # 가장 빠른 열차의 정차역 조회
+        if best_train_no:
+            best_train_stops = _get_train_stops(best_train_no, dep_place_id, arr_place_id, api_key)
+        
         return {
             "duration": int(min_duration) if min_duration != float('inf') else 0,
-            "trains": sorted(trains, key=lambda x: x["duration"])
+            "trains": sorted(trains, key=lambda x: x["duration"]),
+            "stops": best_train_stops
         }
     except Exception as e:
         print(f"스레드 API 오류: {e}")
@@ -184,15 +237,17 @@ def get_all_train_info_parallel(station_dep: str, station_arr: str, api_key: str
     arr_place_id = _get_station_id(station_arr, api_key)
     
     if not dep_place_id or not arr_place_id:
-        return {"ktx": {"duration": 0, "trains": []}, 
-                "mugunghwa": {"duration": 0, "trains": []},
-                "saemaul": {"duration": 0, "trains": []}}
+        return {"ktx": {"duration": 0, "trains": [], "stops": []}, 
+                "mugunghwa": {"duration": 0, "trains": [], "stops": []},
+                "saemaul": {"duration": 0, "trains": [], "stops": []},
+                "itx-saemaul": {"duration": 0, "trains": [], "stops": []}}
 
     key = _get_key(api_key)
     if not key:
-        return {"ktx": {"duration": 0, "trains": []}, 
-                "mugunghwa": {"duration": 0, "trains": []},
-                "saemaul": {"duration": 0, "trains": []}}
+        return {"ktx": {"duration": 0, "trains": [], "stops": []}, 
+                "mugunghwa": {"duration": 0, "trains": [], "stops": []},
+                "saemaul": {"duration": 0, "trains": [], "stops": []},
+                "itx-saemaul": {"duration": 0, "trains": [], "stops": []}}
 
     # ThreadPoolExecutor로 4개 요청 동시 실행 (itx-saemaul 추가)
     results = {}
@@ -219,7 +274,7 @@ def get_all_train_info_parallel(station_dep: str, station_arr: str, api_key: str
                 
                 results[grade] = result
             except:
-                results[grade] = {"duration": 0, "trains": []}
+                results[grade] = {"duration": 0, "trains": [], "stops": []}
     
     return results
 

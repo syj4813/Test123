@@ -175,25 +175,30 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
             "⚠ 역간거리는 공식 데이터에 없어 직선거리×보정계수(근사값)입니다."
         )
     else:
-        base_notes.append(f"경유 경로(선로 기준, 정차역 아님): {' - '.join(via_stations)}")
+        # TAGO API에서 정차역을 얻을 수 없을 때만 선로 기준 경로 표시
+        base_notes.append(f"경로(선로 기준, 실제 정차역과 다를 수 있음): {' - '.join(via_stations)}")
 
     # Threading으로 3개 등급 병렬 조회 (Streamlit 호환!)
     train_info_all = train_api_threading.get_all_train_info_parallel(o_st[0], d_st[0])
     
     results = {}
     for mode in RAIL_GRADES:
-        # Threading 결과에서 소요시간 추출
+        # Threading 결과에서 소요시간 + 정차역 추출
         train_data = train_info_all.get(mode, {})
         train_duration_seconds = train_data.get("duration", 0)
         trains = train_data.get("trains", [])
+        train_stops = train_data.get("stops", [])  # 실제 정차역
         
         # API 실패 시 거리 기반 추정
         if train_duration_seconds == 0:
-            speeds = {"ktx": 200, "saemaul": 80, "mugunghwa": 70}  # km/h
+            speeds = {"ktx": 200, "saemaul": 80, "mugunghwa": 70, "itx-saemaul": 80}  # km/h
             train_duration_seconds = int(rail_km / speeds[mode] * 3600)
         
         # 가장 빠른 열차 정보 (첫 번째)
         best_train = trains[0] if trains else {}
+        
+        # 정차역이 있으면 사용, 없으면 Dijkstra 경로 사용
+        route_display = train_stops if train_stops else list(via_stations)
         
         e3 = compute_emission(mode, rail_km, passengers=passengers)
         rail_leg = LegResult(
@@ -201,7 +206,7 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
             rail_km, 
             e3["co2_kg"], 
             e3["pm25_kg"], 
-            list(via_stations), 
+            route_display,  # 정차역 또는 경유역
             train_duration_seconds,
             best_train  # 열차 정보 포함
         )

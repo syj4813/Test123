@@ -14,7 +14,7 @@ Google Directions API는 한국 내 도로 경로(자동차/도보)를 지원하
 import os
 import requests
 
-import config
+# import config
 
 # 카카오모빌리티 길찾기(자동차) API
 DIRECTIONS_URL = "https://apis-navi.kakaomobility.com/v1/directions"

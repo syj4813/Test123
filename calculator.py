@@ -148,7 +148,35 @@ def compute_bus(origin_pt, dest_pt, passengers: int = 1) -> ModeResult:
 RAIL_GRADES = ["ktx", "mugunghwa", "saemaul", "itx-saemaul"]
 
 
-def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResult]:
+def _calculate_train_wait_time(travel_time_str: str, access_duration_seconds: int, train_deptime_str: str) -> int:
+    """
+    기차 대기시간 계산
+    
+    Args:
+        travel_time_str: 사용자 출발시간 (예: "09:00")
+        access_duration_seconds: 출발지 → 역까지 운전시간 (초)
+        train_deptime_str: 열차 출발시간 (예: "10:30")
+    
+    Returns:
+        대기시간 (초). 음수면 열차를 이미 놓친 경우 (이 경우 다음 열차 고려 필요)
+    """
+    try:
+        # 사용자 출발시간 파싱
+        dep_h, dep_m = map(int, travel_time_str.split(':'))
+        dep_minutes = dep_h * 60 + dep_m
+        
+        # 역 도착시간 계산
+        arrival_minutes = dep_minutes + (access_duration_seconds // 60)
+        
+        # 열차 출발시간 파싱
+        train_h, train_m = map(int, train_deptime_str.split(':'))
+        train_minutes = train_h * 60 + train_m
+        
+        # 대기시간 (음수면 이미 출발했으므로 0)
+        wait_minutes = max(0, train_minutes - arrival_minutes)
+        return wait_minutes * 60  # 초 단위로 반환
+    except:
+        return 0  # 파싱 실패 시 대기시간 없음
     """세 등급(KTX/무궁화/새마을)을 모두 계산해서 {등급: ModeResult} 딕셔너리로 반환.
 
     출발/도착역 선정과 역간 실제거리는 등급과 무관하게 동일한 물리적 경로를
@@ -211,11 +239,21 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
             train_duration_seconds,
             best_train  # 열차 정보 포함
         )
+        # 기차 대기시간 계산 (역 도착 후 열차 출발까지 기다리는 시간)
+        train_wait_seconds = 0
+        if best_train and best_train.get("deptime"):
+            train_wait_seconds = _calculate_train_wait_time(
+                travel_time_str, 
+                int(leg_access1.duration_seconds),
+                best_train.get("deptime")
+            )
+        
         legs = [leg_access1, rail_leg, leg_access2]
         total_km = leg_access1.km + rail_km + leg_access2.km
         total_co2 = leg_access1.co2_kg + e3["co2_kg"] + leg_access2.co2_kg
         total_pm25 = leg_access1.pm25_kg + e3["pm25_kg"] + leg_access2.pm25_kg
-        total_duration = leg_access1.duration_seconds + train_duration_seconds + leg_access2.duration_seconds
+        # 총 소요시간 = 출발지→역 + 기차 대기 + 기차 탑승 + 역→도착지
+        total_duration = leg_access1.duration_seconds + train_wait_seconds + train_duration_seconds + leg_access2.duration_seconds
         results[mode] = ModeResult(total_km, total_co2, total_pm25, legs, list(base_notes), total_duration)
 
     return results
@@ -246,7 +284,7 @@ class ComparisonResult:
         }
 
 
-def run(origin_query: str, dest_query: str, passengers: int = 1) -> ComparisonResult:
+def run(origin_query: str, dest_query: str, passengers: int = 1, travel_time_str: str = "00:00") -> ComparisonResult:
     o_lat, o_lng, o_addr = geocode(origin_query)
     d_lat, d_lng, d_addr = geocode(dest_query)
     origin_pt = (o_lat, o_lng)
@@ -254,6 +292,6 @@ def run(origin_query: str, dest_query: str, passengers: int = 1) -> ComparisonRe
 
     car = compute_car(origin_pt, dest_pt, passengers)
     bus = compute_bus(origin_pt, dest_pt, passengers)
-    rail = compute_rail(origin_pt, dest_pt, passengers)
+    rail = compute_rail(origin_pt, dest_pt, passengers, travel_time_str)
 
     return ComparisonResult(car, bus, rail)

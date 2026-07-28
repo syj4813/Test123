@@ -34,9 +34,9 @@ if 'passengers' not in st.session_state:
 
 # CPU 사용량 최소화: 계산 결과 캐싱 (TTL: 30분, 변경감지: origin+dest+passengers)
 @st.cache_data(ttl=1800, show_spinner=False)  
-def cached_run(origin, dest, passengers):
+def cached_run(origin, dest, passengers, travel_time_str):
     """API 호출 결과를 30분 동안 캐싱하여 CPU 절감"""
-    return run(origin, dest, passengers=passengers)
+    return run(origin, dest, passengers=passengers, travel_time_str=travel_time_str)
 
 MODE_LABEL = {
     "ktx": "KTX", 
@@ -242,7 +242,7 @@ if submitted:
         status_placeholder.info("🚆 열차 정보 조회 중... (3-5초 소요, 캐시 시 즉시)")
         
         # 캐싱된 계산 호출 (CPU 절감)
-        result = cached_run(origin, dest, int(passengers))
+        result = cached_run(origin, dest, int(passengers), travel_time.strftime("%H:%M"))
         
         progress_placeholder.success("✅ 계산 완료!")
         status_placeholder.empty()

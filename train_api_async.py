@@ -12,6 +12,13 @@ import aiohttp
 import functools
 from datetime import datetime, timedelta
 
+# Streamlit의 asyncio 루프와 호환되도록 설정
+try:
+    import nest_asyncio
+    nest_asyncio.apply()
+except ImportError:
+    pass  # nest_asyncio 미설치 시 무시 (로컬에서만 필요)
+
 
 TAGO_BASE_URL = "https://apis.data.go.kr/1613000/TrainInfo"
 TRAIN_GRADE_MAP = {
@@ -207,22 +214,11 @@ async def get_all_train_info_async(station_dep: str, station_arr: str, api_key: 
 
 
 def get_all_train_info_sync(station_dep: str, station_arr: str, api_key: str = None, dep_date: str = "null") -> dict:
-    """동기 래퍼 - asyncio 이벤트 루프 자동 관리"""
+    """동기 래퍼 - nest_asyncio로 Streamlit 호환성 확보"""
     try:
-        # 이미 실행 중인 루프가 있으면 사용, 없으면 새로 생성
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Streamlit/Jupyter 환경에서는 이미 루프가 실행 중
-            # 이 경우 새 스레드에서 실행
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                return pool.submit(
-                    asyncio.run,
-                    get_all_train_info_async(station_dep, station_arr, api_key, dep_date)
-                ).result()
-        else:
-            return asyncio.run(get_all_train_info_async(station_dep, station_arr, api_key, dep_date))
-    except:
+        return asyncio.run(get_all_train_info_async(station_dep, station_arr, api_key, dep_date))
+    except Exception as e:
+        print(f"비동기 API 실패: {e}")
         # 오류 발생 시 빈 결과 반환
         return {"ktx": {"duration": 0, "trains": []}, 
                 "mugunghwa": {"duration": 0, "trains": []},

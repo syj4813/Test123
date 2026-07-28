@@ -81,7 +81,7 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
     city_codes = ["11", "26", "27", "28", "29", "30", "31", "36", "37", "39"]
     
     for city_code in city_codes:
-        url = f"{TAGO_BASE_URL}/getCtyAcctoTrainSttnList"
+        url = f"{TAGO_BASE_URL}/GetCtyAcctoTrainSttnList"
         params = {
             "serviceKey": key,
             "pageNo": 1,
@@ -109,59 +109,27 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
 
 
 def _get_train_stops(train_no, dep_station_name, arr_station_name, api_key):
-    """열차의 실제 정차역 조회 (getTrainStopList API)
+    """⚠️ 정차역 조회는 현재 비활성화 상태.
 
-    🔧 FIX: 이전에는 역ID(예: "NAT010000")를 역명 문자열(예: "서울")과
-    비교하고 있어서 시작점을 절대 찾지 못해 항상 빈 리스트를 반환했다.
-    역명끼리 비교하도록 수정.
+    공공데이터포털 열차정보(TrainInfoService) API의 공식 오퍼레이션은
+    다음 4개뿐이며, 정차역 목록을 제공하는 오퍼레이션이 없다:
+      - GetCtyCodeList (도시코드 목록)
+      - GetStrtpntAlocFndTrainInfo (출/도착지기반 열차정보)
+      - GetCtyAcctoTrainSttnList (시/도별 기차역 목록)
+      - GetVhcleKndList (차량종류 목록)
+
+    이전 코드가 호출하던 'GetTrainStopList'는 이 서비스에 존재하지
+    않는 엔드포인트였다(계속 404를 반환한 이유). 정차역이 필요하면
+    한국철도공사_열차운행정보(별도 서비스, 별도 신청 필요) 등 다른
+    데이터셋을 붙여야 한다. 지금은 항상 빈 리스트를 반환해 호출부가
+    자동으로 Dijkstra 기반 선로 경로(via_stations)로 폴백하게 한다.
     """
-    try:
-        url = f"{TAGO_BASE_URL}/getTrainStopList"
-        params = {
-            "serviceKey": api_key,
-            "pageNo": 1,
-            "numOfRows": 100,
-            "_type": "json",
-            "trainNo": train_no,
-        }
-        # 🔧 타임아웃 1초 → 3초 (1초는 너무 짧아 실패율이 높았음)
-        resp = requests.get(url, params=params, timeout=3)
-        if resp.status_code != 200:
-            return []
-        
-        data = resp.json()
-        items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        
-        if not items:
-            return []
-        
-        # 출발역부터 도착역까지의 정차역만 추출 (🔧 역명 기반 비교)
-        stops = []
-        found_start = False
-        for item in items:
-            station_name = item.get("stationname", "").strip()
-            if not station_name:
-                continue
-            
-            if not found_start:
-                if dep_station_name in station_name or station_name in dep_station_name:
-                    found_start = True
-            
-            if found_start:
-                stops.append(station_name)
-                
-                # 도착역에 도달하면 종료
-                if arr_station_name in station_name or station_name in arr_station_name:
-                    break
-        
-        return stops
-    except:
-        return []
+    return []
 
 
 def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, dep_station_name, arr_station_name, dep_date="null"):
     """단일 등급의 열차 정보 조회 (스레드에서 실행) - 정차역 포함"""
-    url = f"{TAGO_BASE_URL}/getStrtpntAlocFndTrainInfo"
+    url = f"{TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
     params = {
         "serviceKey": api_key,
         "pageNo": 1,

@@ -81,7 +81,7 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
     city_codes = ["11", "26", "27", "28", "29", "30", "31", "36", "37", "39"]
     
     for city_code in city_codes:
-        url = f"{TAGO_BASE_URL}/getCtyAcctoTrainSttnList"
+        url = f"{TAGO_BASE_URL}/GetCtyAcctoTrainSttnList"
         params = {
             "serviceKey": key,
             "pageNo": 1,
@@ -111,7 +111,7 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
 @functools.lru_cache(maxsize=500)
 def _fetch_train_info(dep_place_id: str, arr_place_id: str, grade_code: str, api_key: str, dep_date: str = "null") -> int:
     """캐시된 열차 정보 조회 - 소요시간 반환."""
-    url = f"{TAGO_BASE_URL}/getStrtpntAlocFndTrainInfo"
+    url = f"{TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
     params = {
         "serviceKey": api_key,
         "pageNo": 1,

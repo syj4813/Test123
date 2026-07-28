@@ -240,8 +240,8 @@ if submitted:
         for i, step in enumerate(steps):
             status_placeholder.info(step)
         
-        # 각 등급별로 병렬 조회 (정차역 포함)
-        status_placeholder.info("🚆 열차 정보 및 정차역 조회 중... (5-10초 소요)")
+        # 각 등급별로 병렬 조회
+        status_placeholder.info("🚆 열차 정보 조회 중... (5-10초 소요)")
         
         # 캐싱된 계산 호출 (CPU 절감)
         result = cached_run(origin, dest, int(passengers), travel_time.strftime("%H:%M"))
@@ -325,8 +325,8 @@ if st.session_state.get("last_result") is not None:
         route_str = " → ".join(route_preview) if len(route_preview) <= 6 else (
             " → ".join(route_preview[:3]) + f" → ... ({len(route_preview)}개 역) ... → " + " → ".join(route_preview[-2:])
         )
-        # 정차역 또는 선로 경로 표시 구분
-        route_label = "정차역" if len(route_preview) > 0 and route_preview[0] != "청량리" else "선로 경로"
+        # 정차역 API(GetTrainStopList)가 존재하지 않아 항상 Dijkstra 선로 경로 사용
+        route_label = "선로 경로(참고용, 실제 정차역과 다를 수 있음)"
         route_str_with_label = f"<small style='color:#666;'>📍 {route_label}:</small> {route_str}"
         warn = "".join(f'<div class="warn-note">{n}</div>' for n in r.notes if n.startswith("⚠"))
         with col:
@@ -362,7 +362,7 @@ if st.session_state.get("last_result") is not None:
             with st.expander("전체 경로 보기 (역 접근구간 포함)"):
                 _render_leg_detail(r.legs)
 
-    st.caption("📍 정차역: TAGO API 기반 실제 정차역 / 선로 경로: Dijkstra 기반 선로상 경유역")
+    st.caption("📍 선로 경로: Dijkstra 기반 선로상 경유역 (실제 정차역 API는 TAGO에서 미제공되어 사용 불가)")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -426,7 +426,7 @@ if st.session_state.get("last_result") is not None:
                 if not _dep_id or not _arr_id:
                     st.warning("역ID 조회부터 실패했습니다. 아래 '② 도시코드 역 목록 조회'로 원인을 확인하세요.")
                 else:
-                    _url = f"{_tat.TAGO_BASE_URL}/getStrtpntAlocFndTrainInfo"
+                    _url = f"{_tat.TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
                     _params = {
                         "serviceKey": _key,
                         "pageNo": 1,
@@ -453,7 +453,7 @@ if st.session_state.get("last_result") is not None:
                 st.error("TAGO_API_KEY가 Secrets에 없습니다.")
             else:
                 import train_api_threading as _tat
-                _url = f"{_tat.TAGO_BASE_URL}/getCtyAcctoTrainSttnList"
+                _url = f"{_tat.TAGO_BASE_URL}/GetCtyAcctoTrainSttnList"
                 _params = {
                     "serviceKey": _key,
                     "pageNo": 1,
@@ -467,7 +467,7 @@ if st.session_state.get("last_result") is not None:
                 st.code(_resp.text[:3000], language="json")
 
         st.markdown("---")
-        if st.button("④ URL 후보 4가지 동시 테스트 (역ID 조회용 엔드포인트)"):
+        if st.button("④ 최종 확인: GetCtyAcctoTrainSttnList (대문자 Get, 확정된 정답)"):
             import requests as _requests
             try:
                 _key = st.secrets.get("TAGO_API_KEY")
@@ -476,32 +476,25 @@ if st.session_state.get("last_result") is not None:
             if not _key:
                 st.error("TAGO_API_KEY가 Secrets에 없습니다.")
             else:
-                _candidates = [
-                    "https://apis.data.go.kr/1613000/TrainInfoService/getCtyAcctoTrainSttnList",
-                    "http://apis.data.go.kr/1613000/TrainInfoService/getCtyAcctoTrainSttnList",
-                    "https://apis.data.go.kr/1613000/TrainInfo/getCtyAcctoTrainSttnList",
-                    "https://apis.data.go.kr/1613000/TrainInfoService/GetCtyAcctoTrainSttnList",
-                ]
-                for _cand_url in _candidates:
-                    try:
-                        _r = _requests.get(
-                            _cand_url,
-                            params={
-                                "serviceKey": _key,
-                                "pageNo": 1,
-                                "numOfRows": 5,
-                                "_type": "json",
-                                "cityCode": "11",
-                            },
-                            timeout=10,
-                        )
-                        st.write(f"`{_cand_url}` → 상태코드 `{_r.status_code}`")
-                        st.code(_r.text[:400])
-                    except Exception as _e:
-                        st.write(f"`{_cand_url}` → 예외: {_e}")
+                _url = "https://apis.data.go.kr/1613000/TrainInfoService/GetCtyAcctoTrainSttnList"
+                _r = _requests.get(
+                    _url,
+                    params={
+                        "serviceKey": _key,
+                        "pageNo": 1,
+                        "numOfRows": 5,
+                        "_type": "json",
+                        "cityCode": "11",
+                    },
+                    timeout=10,
+                )
+                st.write(f"상태코드: `{_r.status_code}`")
+                st.code(_r.text[:1000], language="json")
 
         st.markdown("---")
-        train_no_debug = st.text_input("③ 편명 직접 입력해서 정차역 조회 (예: 05201)", key="debug_trainno")
+        st.caption("⚠️ 아래 정차역 조회는 참고용입니다. 공식 오퍼레이션 목록에 "
+                   "GetTrainStopList가 없어서 항상 404가 예상됩니다 (정차역 기능은 비활성화됨).")
+        train_no_debug = st.text_input("③ 편명 직접 입력해서 정차역 조회 시도 (예: 05201)", key="debug_trainno")
         if st.button("정차역 원본 응답 조회") and train_no_debug:
             import requests as _requests
             try:

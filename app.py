@@ -398,7 +398,14 @@ if st.session_state.get("last_result") is not None:
     # ------------------------------------------------------------------
     with st.expander("🔧 [디버그] TAGO API 원본 응답 확인"):
         st.caption("편명/정차역이 안 보일 때, 이 버튼으로 실제 API가 뭘 돌려주는지 확인합니다.")
-        if st.button("KTX 원본 응답 조회"):
+
+        dbg_col1, dbg_col2 = st.columns(2)
+        with dbg_col1:
+            dbg_dep_name = st.text_input("출발역명", value="서울", key="dbg_dep_name")
+        with dbg_col2:
+            dbg_arr_name = st.text_input("도착역명", value="부산", key="dbg_arr_name")
+
+        if st.button("① 역ID 조회 + KTX 원본 응답 조회"):
             import requests as _requests
             try:
                 _key = st.secrets.get("TAGO_API_KEY")
@@ -408,30 +415,93 @@ if st.session_state.get("last_result") is not None:
                 st.error("TAGO_API_KEY가 Secrets에 없습니다.")
             else:
                 import train_api_threading as _tat
-                _dep_id = _tat._get_station_id(origin.split()[0] if origin else "서울", _key)
-                _arr_id = _tat._get_station_id(dest.split()[0] if dest else "부산", _key)
-                st.write(f"조회한 출발역ID: `{_dep_id}` / 도착역ID: `{_arr_id}`")
 
-                _url = f"{_tat.TAGO_BASE_URL}/getStrtpntAlocFndTrainInfo"
+                # MAJOR_STATIONS에 있는지부터 확인
+                st.write(f"MAJOR_STATIONS 목록: {list(_tat.MAJOR_STATIONS.keys())}")
+                _dep_id = _tat._get_station_id(dbg_dep_name, _key)
+                _arr_id = _tat._get_station_id(dbg_arr_name, _key)
+                st.write(f"출발역ID: `{_dep_id}` (비어있으면 조회 실패)")
+                st.write(f"도착역ID: `{_arr_id}` (비어있으면 조회 실패)")
+
+                if not _dep_id or not _arr_id:
+                    st.warning("역ID 조회부터 실패했습니다. 아래 '② 도시코드 역 목록 조회'로 원인을 확인하세요.")
+                else:
+                    _url = f"{_tat.TAGO_BASE_URL}/getStrtpntAlocFndTrainInfo"
+                    _params = {
+                        "serviceKey": _key,
+                        "pageNo": 1,
+                        "numOfRows": 20,
+                        "_type": "json",
+                        "depPlaceId": _dep_id,
+                        "arrPlaceId": _arr_id,
+                        "depPlandTime": "null",
+                        "trainGradeCode": "00",
+                    }
+                    _resp = _requests.get(_url, params=_params, timeout=10)
+                    st.write(f"HTTP 상태코드: `{_resp.status_code}`")
+                    st.write(f"실제 요청 URL: `{_resp.url}`")
+                    st.code(_resp.text[:3000], language="json")
+
+        st.markdown("---")
+        if st.button("② 도시코드 역 목록 조회 (서울=11)"):
+            import requests as _requests
+            try:
+                _key = st.secrets.get("TAGO_API_KEY")
+            except Exception:
+                _key = None
+            if not _key:
+                st.error("TAGO_API_KEY가 Secrets에 없습니다.")
+            else:
+                import train_api_threading as _tat
+                _url = f"{_tat.TAGO_BASE_URL}/getCtyAcctoTrainSttnList"
                 _params = {
                     "serviceKey": _key,
                     "pageNo": 1,
-                    "numOfRows": 20,
+                    "numOfRows": 1000,
                     "_type": "json",
-                    "depPlaceId": _dep_id,
-                    "arrPlaceId": _arr_id,
-                    "depPlandTime": "null",
-                    "trainGradeCode": "00",
+                    "cityCode": "11",
                 }
                 _resp = _requests.get(_url, params=_params, timeout=10)
                 st.write(f"HTTP 상태코드: `{_resp.status_code}`")
                 st.write(f"실제 요청 URL: `{_resp.url}`")
                 st.code(_resp.text[:3000], language="json")
 
-        if st.button("정차역(GetTrainStopList) 원본 응답 조회 - 편명 필요"):
-            st.info("먼저 위에서 KTX 원본 응답을 조회해서 실제 편명(trainno)을 확인한 뒤, "
-                    "아래 입력창에 그 편명을 넣고 다시 눌러주세요.")
-        train_no_debug = st.text_input("편명 직접 입력 (예: 05201)", key="debug_trainno")
+        st.markdown("---")
+        if st.button("④ URL 후보 4가지 동시 테스트 (역ID 조회용 엔드포인트)"):
+            import requests as _requests
+            try:
+                _key = st.secrets.get("TAGO_API_KEY")
+            except Exception:
+                _key = None
+            if not _key:
+                st.error("TAGO_API_KEY가 Secrets에 없습니다.")
+            else:
+                _candidates = [
+                    "https://apis.data.go.kr/1613000/TrainInfoService/getCtyAcctoTrainSttnList",
+                    "http://apis.data.go.kr/1613000/TrainInfoService/getCtyAcctoTrainSttnList",
+                    "https://apis.data.go.kr/1613000/TrainInfo/getCtyAcctoTrainSttnList",
+                    "https://apis.data.go.kr/1613000/TrainInfoService/GetCtyAcctoTrainSttnList",
+                ]
+                for _cand_url in _candidates:
+                    try:
+                        _r = _requests.get(
+                            _cand_url,
+                            params={
+                                "serviceKey": _key,
+                                "pageNo": 1,
+                                "numOfRows": 5,
+                                "_type": "json",
+                                "cityCode": "11",
+                            },
+                            timeout=10,
+                        )
+                        st.write(f"`{_cand_url}` → 상태코드 `{_r.status_code}`")
+                        st.code(_r.text[:400])
+                    except Exception as _e:
+                        st.write(f"`{_cand_url}` → 예외: {_e}")
+
+        st.markdown("---")
+        train_no_debug = st.text_input("③ 편명 직접 입력해서 정차역 조회 (예: 05201)", key="debug_trainno")
         if st.button("정차역 원본 응답 조회") and train_no_debug:
             import requests as _requests
             try:

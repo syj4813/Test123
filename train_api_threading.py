@@ -109,7 +109,7 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
 
 
 def _get_train_stops(train_no, dep_place_id, arr_place_id, api_key):
-    """열차의 실제 정차역 조회 (GetTrainStopList API)"""
+    """열차의 실제 정차역 조회 (GetTrainStopList API) - 빠르게 실패하도록"""
     try:
         url = f"{TAGO_BASE_URL}/GetTrainStopList"
         params = {
@@ -119,7 +119,8 @@ def _get_train_stops(train_no, dep_place_id, arr_place_id, api_key):
             "_type": "json",
             "trainNo": train_no,
         }
-        resp = requests.get(url, params=params, timeout=3)
+        # 타임아웃 1초로 매우 단축 (정차역은 선택사항)
+        resp = requests.get(url, params=params, timeout=1)
         if resp.status_code != 200:
             return []
         
@@ -167,7 +168,7 @@ def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, de
     }
 
     try:
-        # 타임아웃 5초로 단축 (Streamlit Cloud 최적화)
+        # 타임아웃 5초 (TAGO API 신뢰성 우선)
         resp = requests.get(url, params=params, timeout=5)
         if resp.status_code != 200:
             return {"duration": 0, "trains": [], "stops": []}
@@ -193,7 +194,8 @@ def _fetch_single_train_info(dep_place_id, arr_place_id, grade_code, api_key, de
                     # 가장 빠른 열차인지 확인
                     if duration < min_duration:
                         min_duration = duration
-                        best_train_no = train.get("trainno", "")
+                        # 정차역 조회는 비활성화 (초기 로딩 속도 우선)
+                        best_train_no = None  # train.get("trainno", "")
                     
                     dep_time_str = train.get("depplandtime", "")
                     arr_time_str = train.get("arrplandtime", "")

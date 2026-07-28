@@ -238,6 +238,9 @@ if submitted:
         for i, step in enumerate(steps):
             status_placeholder.info(step)
         
+        # 각 등급별로 병렬 조회 (타임아웃 5초)
+        status_placeholder.info("🚆 열차 정보 조회 중... (3-5초 소요, 캐시 시 즉시)")
+        
         # 캐싱된 계산 호출 (CPU 절감)
         result = cached_run(origin, dest, int(passengers))
         
@@ -306,25 +309,25 @@ if submitted:
         route_str = " → ".join(route_preview) if len(route_preview) <= 6 else (
             " → ".join(route_preview[:3]) + f" → ... ({len(route_preview)}개 역) ... → " + " → ".join(route_preview[-2:])
         )
-        # 정차역 또는 선로 경로 표시 구분
-        route_label = "정차역" if len(route_preview) > 0 else "경로"
-        route_str_with_label = f"<small style='color:#666;'>📍 {route_label}:</small> {route_str}"
+        # 선로 기준 경로 표시
+        route_str_with_label = f"<small style='color:#666;'>📍 선로 경로:</small> {route_str}"
         warn = "".join(f'<div class="warn-note">{n}</div>' for n in r.notes if n.startswith("⚠"))
         with col:
             rail_leg = next(l for l in r.legs if l.mode == mode)
             time_str = f" · {format_time(r.total_duration_seconds)}" if r.total_duration_seconds > 0 else ""
             
-            # 열차 정보 (편명, 출발/도착 시간) - 안 나타나면 디버깅용
+            # 열차 정보 (편명, 출발/도착 시간)
             train_info_str = ""
-            if rail_leg.train_info:
-                # train_info가 dict 형태인지 확인
-                if isinstance(rail_leg.train_info, dict):
-                    train_no = rail_leg.train_info.get("trainno") or rail_leg.train_info.get("train_no") or ""
-                    dep_time = rail_leg.train_info.get("deptime") or rail_leg.train_info.get("dep_time") or ""
-                    arr_time = rail_leg.train_info.get("arrtime") or rail_leg.train_info.get("arr_time") or ""
-                    
-                    if train_no and dep_time and arr_time:
-                        train_info_str = f'<div class="result-sub" style="color:#FF6B6B; font-weight: bold;">🚆 {mode.upper()}: {train_no} · {dep_time} → {arr_time}</div>'
+            if rail_leg.train_info and isinstance(rail_leg.train_info, dict):
+                train_info = rail_leg.train_info
+                # 여러 필드명 시도
+                train_no = train_info.get("trainno") or train_info.get("train_no") or ""
+                dep_time = train_info.get("deptime") or train_info.get("dep_time") or ""
+                arr_time = train_info.get("arrtime") or train_info.get("arr_time") or ""
+                
+                # 모두 있을 때만 표시
+                if train_no and dep_time and arr_time:
+                    train_info_str = f'<div class="result-sub" style="color:#FF6B6B; font-weight: bold;">🚆 편명 {train_no} · {dep_time}→{arr_time}</div>'
             
             st.markdown(
                 f"""
@@ -342,7 +345,7 @@ if submitted:
             with st.expander("전체 경로 보기 (역 접근구간 포함)"):
                 _render_leg_detail(r.legs)
 
-    st.caption("📍 정차역: TAGO API 기반 실제 정차역 / 선로 경로: Dijkstra 기반 선로상 경유역")
+    st.caption("📍 선로 경로: Dijkstra 알고리즘 기반 실제 선로상 경유역 (열차 정차역과는 다를 수 있음)")
 
     st.markdown("<br>", unsafe_allow_html=True)
 

@@ -9,6 +9,7 @@ GetStrtpntAlocFndTrainInfo: 출/도착지기반 열차 조회
 
 import os
 import requests
+import functools
 from datetime import datetime
 
 
@@ -44,6 +45,7 @@ def _parse_time(time_str: str) -> int:
         return 0
 
 
+@functools.lru_cache(maxsize=500)
 def _get_station_id(station_name: str, api_key: str = None) -> str:
     """역명으로 역ID 조회.
     
@@ -90,6 +92,46 @@ def _get_station_id(station_name: str, api_key: str = None) -> str:
     return ""
 
 
+@functools.lru_cache(maxsize=500)
+def _fetch_train_info(dep_place_id: str, arr_place_id: str, grade_code: str, api_key: str) -> int:
+    """캐시된 열차 정보 조회."""
+    url = f"{TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
+    params = {
+        "serviceKey": api_key,
+        "pageNo": 1,
+        "numOfRows": 100,
+        "_type": "json",
+        "depPlaceId": dep_place_id,
+        "arrPlaceId": arr_place_id,
+        "depPlandTime": "null",
+        "trainGradeCode": grade_code,
+    }
+
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code != 200:
+            return 0
+        data = resp.json()
+    except:
+        return 0
+
+    items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+    if not items:
+        return 0
+
+    min_duration = float('inf')
+    for train in items:
+        dep_time = _parse_time(train.get("depplandtime", ""))
+        arr_time = _parse_time(train.get("arrplandtime", ""))
+        
+        if dep_time > 0 and arr_time > 0:
+            duration = arr_time - dep_time
+            if duration > 0 and duration < min_duration:
+                min_duration = duration
+
+    return int(min_duration) if min_duration != float('inf') else 0
+
+
 def get_train_duration(station_dep: str, station_arr: str, train_grade: str, api_key: str = None) -> int:
     """실제 열차 소요시간(초) 조회.
     
@@ -102,12 +144,12 @@ def get_train_duration(station_dep: str, station_arr: str, train_grade: str, api
     Returns:
         소요시간(초). 조회 실패 시 0 반환
     """
-    # 역명 → 역ID
+    # 역명 → 역ID (캐시됨)
     dep_place_id = _get_station_id(station_dep, api_key)
     arr_place_id = _get_station_id(station_arr, api_key)
     
     if not dep_place_id or not arr_place_id:
-        return 0  # 역ID 못 찾으면 0 반환
+        return 0
 
     key = _get_key(api_key)
     if not key:
@@ -117,45 +159,5 @@ def get_train_duration(station_dep: str, station_arr: str, train_grade: str, api
     if not grade_code:
         return 0
 
-    url = f"{TAGO_BASE_URL}/GetStrtpntAlocFndTrainInfo"
-    params = {
-        "serviceKey": key,
-        "pageNo": 1,
-        "numOfRows": 100,  # 하루 열차 다 가져오기
-        "_type": "json",
-        "depPlaceId": dep_place_id,
-        "arrPlaceId": arr_place_id,
-        "depPlandTime": "null",  # null = 오늘
-        "trainGradeCode": grade_code,
-    }
-
-    try:
-        resp = requests.get(url, params=params, timeout=10)
-    except:
-        return 0
-
-    if resp.status_code != 200:
-        return 0
-
-    try:
-        data = resp.json()
-    except:
-        return 0
-
-    # 응답에서 열차 목록 추출
-    items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
-    if not items:
-        return 0
-
-    # 가장 빠른 열차의 소요시간 계산
-    min_duration = float('inf')
-    for train in items:
-        dep_time = _parse_time(train.get("depplandtime", ""))
-        arr_time = _parse_time(train.get("arrplandtime", ""))
-        
-        if dep_time > 0 and arr_time > 0:
-            duration = arr_time - dep_time
-            if duration > 0 and duration < min_duration:
-                min_duration = duration
-
-    return int(min_duration) if min_duration != float('inf') else 0
+    # 캐시된 함수로 조회
+    return _fetch_train_info(dep_place_id, arr_place_id, grade_code, key)

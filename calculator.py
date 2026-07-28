@@ -22,7 +22,7 @@ from geocode import geocode
 from road_distance import driving_distance_km, driving_route
 from transit_distance import transit_route, TransitError, format_time
 import train_api
-import train_api_async
+import train_api_threading
 from stations import nearest_stations
 from terminals import nearest_terminals
 from rail_distance import station_to_station_km
@@ -177,12 +177,12 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
     else:
         base_notes.append(f"경유 경로(선로 기준, 정차역 아님): {' - '.join(via_stations)}")
 
-    # 비동기로 3개 등급 동시 조회 (훨씬 빠름!)
-    train_info_all = train_api_async.get_all_train_info_sync(o_st[0], d_st[0])
+    # Threading으로 3개 등급 병렬 조회 (Streamlit 호환!)
+    train_info_all = train_api_threading.get_all_train_info_parallel(o_st[0], d_st[0])
     
     results = {}
     for mode in RAIL_GRADES:
-        # 비동기 API 결과에서 소요시간 추출
+        # Threading 결과에서 소요시간 추출
         train_data = train_info_all.get(mode, {})
         train_duration_seconds = train_data.get("duration", 0)
         trains = train_data.get("trains", [])

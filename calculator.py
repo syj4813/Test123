@@ -20,6 +20,7 @@ from typing import Dict, List
 
 from geocode import geocode
 from road_distance import driving_distance_km, driving_route
+from transit_distance import transit_route, TransitError, format_time
 from stations import nearest_stations
 from terminals import nearest_terminals
 from rail_distance import station_to_station_km
@@ -33,6 +34,7 @@ class LegResult:
     co2_kg: float
     pm25_kg: float
     route: List[str] = field(default_factory=list)   # 주요 도로명 또는 경유역 목록
+    duration_seconds: int = 0       # 소요시간(초), 0이면 미제공
 
 
 @dataclass
@@ -80,10 +82,17 @@ def _pick_best_terminal(candidates, origin_point):
 
 
 def _car_leg(mode_label, origin_pt, dest_pt, passengers):
-    """자차로 이동하는 구간 하나를 계산 (거리 + 도로명 경로 + 배출량)."""
-    info = driving_route(origin_pt, dest_pt)   # {"km":..., "roads":[...]}
+    """자차로 이동하는 구간 하나를 계산 (거리 + 도로명 경로 + 배출량 + 소요시간)."""
+    info = driving_route(origin_pt, dest_pt)   # {"km":..., "roads":[...], "duration_seconds":...}
     e = compute_emission("car", info["km"], passengers=passengers)
-    return LegResult(mode_label, info["km"], e["co2_kg"], e["pm25_kg"], info["roads"])
+    return LegResult(
+        mode_label, 
+        info["km"], 
+        e["co2_kg"], 
+        e["pm25_kg"], 
+        info["roads"],
+        info.get("duration_seconds", 0)
+    )
 
 
 def compute_car(origin_pt, dest_pt, passengers: int = 1) -> ModeResult:
@@ -101,9 +110,27 @@ def compute_bus(origin_pt, dest_pt, passengers: int = 1) -> ModeResult:
     leg1 = _car_leg("car(access→terminal)", origin_pt, (o_term[1], o_term[2]), passengers)
     leg2 = _car_leg("car(terminal→dest)", (d_term[1], d_term[2]), dest_pt, passengers)
 
-    bus_info = driving_route((o_term[1], o_term[2]), (d_term[1], d_term[2]))
-    e3 = compute_emission("express_bus", bus_info["km"], passengers=passengers)
-    leg_bus = LegResult("express_bus", bus_info["km"], e3["co2_kg"], e3["pm25_kg"], bus_info["roads"])
+    # 버스 터미널 간 대중교통 실제 소요시간 (버스 탑승)
+    bus_duration_seconds = 0
+    try:
+        transit_info = transit_route((o_term[1], o_term[2]), (d_term[1], d_term[2]))
+        bus_duration_seconds = transit_info.get("duration_seconds", 0)
+        bus_km = transit_info.get("distance_m", 0) / 1000.0
+    except TransitError:
+        # 대중교통 API 실패 시 도로거리 근사 사용
+        bus_info = driving_route((o_term[1], o_term[2]), (d_term[1], d_term[2]))
+        bus_km = bus_info["km"]
+        bus_duration_seconds = bus_info.get("duration_seconds", 0)
+
+    e3 = compute_emission("express_bus", bus_km, passengers=passengers)
+    leg_bus = LegResult(
+        "express_bus", 
+        bus_km, 
+        e3["co2_kg"], 
+        e3["pm25_kg"], 
+        [],
+        bus_duration_seconds
+    )
 
     legs = [leg1, leg_bus, leg2]
     total_km = leg1.km + leg_bus.km + leg2.km
@@ -137,6 +164,16 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
         o_st[0], o_st[1], o_st[2], d_st[0], d_st[1], d_st[2]
     )
 
+    # 역 간 대중교통 실제 소요시간
+    rail_duration_seconds = 0
+    try:
+        transit_info = transit_route((o_st[1], o_st[2]), (d_st[1], d_st[2]))
+        rail_duration_seconds = transit_info.get("duration_seconds", 0)
+    except TransitError:
+        # 대중교통 API 실패 시 거리 기반 추정
+        # KTX 평균 200km/h, 무궁화 70km/h, 새마을 80km/h
+        rail_duration_seconds = int(rail_km / 200 * 3600)  # KTX 기준 추정
+
     base_notes = [f"출발역: {o_st[0]}", f"도착역: {d_st[0]}"]
     if is_approx:
         base_notes.append(
@@ -148,7 +185,7 @@ def compute_rail(origin_pt, dest_pt, passengers: int = 1) -> Dict[str, ModeResul
     results = {}
     for mode in RAIL_GRADES:
         e3 = compute_emission(mode, rail_km, passengers=passengers)
-        rail_leg = LegResult(mode, rail_km, e3["co2_kg"], e3["pm25_kg"], list(via_stations))
+        rail_leg = LegResult(mode, rail_km, e3["co2_kg"], e3["pm25_kg"], list(via_stations), rail_duration_seconds)
         legs = [leg_access1, rail_leg, leg_access2]
         total_km = leg_access1.km + rail_km + leg_access2.km
         total_co2 = leg_access1.co2_kg + e3["co2_kg"] + leg_access2.co2_kg

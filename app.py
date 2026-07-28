@@ -13,6 +13,7 @@
 import streamlit as st
 
 from calculator import run, RAIL_GRADES
+from transit_distance import format_time
 
 MODE_LABEL = {"ktx": "KTX", "mugunghwa": "무궁화호", "saemaul": "새마을호"}
 MODE_COLOR = {"ktx": "#0B6E4F", "mugunghwa": "#3A8DFF", "saemaul": "#2FB380"}
@@ -34,7 +35,8 @@ def _render_leg_detail(legs):
     """구간별 전체 경로(접근 자차 구간 포함)를 펼쳐서 보여준다."""
     for leg in legs:
         label = LEG_LABEL.get(leg.mode, leg.mode)
-        st.markdown(f"**{label}** · {leg.km:.1f} km · {leg.co2_kg:.3f} kg CO2eq")
+        time_str = f" · {format_time(leg.duration_seconds)}" if leg.duration_seconds > 0 else ""
+        st.markdown(f"**{label}** · {leg.km:.1f} km · {leg.co2_kg:.3f} kg CO2eq{time_str}")
         if leg.route:
             st.markdown(
                 f'<div class="route-line">{" → ".join(leg.route)}</div>',
@@ -158,12 +160,13 @@ if submitted:
     col_car, col_bus = st.columns(2)
 
     with col_car:
+        time_str = f" · {format_time(result.car.legs[0].duration_seconds)}" if result.car.legs[0].duration_seconds > 0 else ""
         st.markdown(
             f"""
             <div class="result-card">
               <h4>🚗 자차</h4>
               <div class="result-metric">{result.car.total_co2_kg:.2f} kg CO2eq</div>
-              <div class="result-sub">미세먼지 {result.car.total_pm25_kg*1000:.2f} g · {result.car.total_km:.1f} km</div>
+              <div class="result-sub">미세먼지 {result.car.total_pm25_kg*1000:.2f} g · {result.car.total_km:.1f} km{time_str}</div>
               <div class="route-line">{" → ".join(result.car.legs[0].route) if result.car.legs[0].route else "경로 정보 없음"}</div>
             </div>
             """,
@@ -172,12 +175,13 @@ if submitted:
 
     with col_bus:
         bus_leg = next(l for l in result.bus.legs if l.mode == "express_bus")
+        time_str = f" · {format_time(bus_leg.duration_seconds)}" if bus_leg.duration_seconds > 0 else ""
         st.markdown(
             f"""
             <div class="result-card">
               <h4>🚌 고속버스</h4>
               <div class="result-metric">{result.bus.total_co2_kg:.2f} kg CO2eq</div>
-              <div class="result-sub">미세먼지 {result.bus.total_pm25_kg*1000:.2f} g · {result.bus.total_km:.1f} km</div>
+              <div class="result-sub">미세먼지 {result.bus.total_pm25_kg*1000:.2f} g · {result.bus.total_km:.1f} km{time_str}</div>
               <div class="route-line">{" → ".join(bus_leg.route) if bus_leg.route else "경로 정보 없음"}</div>
               <div class="result-sub" style="margin-top:6px;">{" / ".join(result.bus.notes)}</div>
             </div>
@@ -203,12 +207,14 @@ if submitted:
         )
         warn = "".join(f'<div class="warn-note">{n}</div>' for n in r.notes if n.startswith("⚠"))
         with col:
+            rail_leg = next(l for l in r.legs if l.mode == mode)
+            time_str = f" · {format_time(rail_leg.duration_seconds)}" if rail_leg.duration_seconds > 0 else ""
             st.markdown(
                 f"""
                 <div class="result-card" style="border-top:4px solid {MODE_COLOR[mode]};">
                   <h4>{MODE_LABEL[mode]}</h4>
                   <div class="result-metric" style="color:{MODE_COLOR[mode]};">{r.total_co2_kg:.2f} kg CO2eq</div>
-                  <div class="result-sub">미세먼지 {r.total_pm25_kg*1000:.2f} g · {r.total_km:.1f} km</div>
+                  <div class="result-sub">미세먼지 {r.total_pm25_kg*1000:.2f} g · {r.total_km:.1f} km{time_str}</div>
                   <div class="route-line">{route_str}</div>
                   {warn}
                 </div>
